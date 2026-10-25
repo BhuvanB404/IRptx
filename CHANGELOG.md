@@ -16,3 +16,7 @@ irptx Changelog
   only with no em dashes, E-coded refusals, plain-English lower-case commit
   subjects, `0.x` versions per category milestone, and this changelog
   (Bhuvan B, 2026-10-25)
+
+  Python front end that only loads the IR and writes it as KIR text. The
+  core ships as a static x86-64 Linux binary, `bin/irptx`, with a one-time
+  build from source as the fallback (Bhuvan B, 2026-10-25)
