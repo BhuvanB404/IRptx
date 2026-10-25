@@ -39,6 +39,11 @@ irptx Changelog
   only when all succeed. Selection, verify and emission are placeholders for now, so
   every kernel refuses with E020 and stdout stays empty (Bhuvan B, 2026-10-26)
 
+- `src/ops.c`, `src/ops.h`: the op table for the pointwise basics (`add subtract multiply
+  divide true_divide maximum minimum relu copy negative abs`) with `op_find`, arity,
+  reducing identities (-1e30 for maximum, never infinity) and `op_emit` in `.rn` forms.
+  `sub` is left out: Emmy cannot construct it (Bhuvan B, 2026-10-26)
+
 ### Build
 
 - `Makefile`: `make` builds `build/irptx` with `-std=c99 -Wall -Wextra -pedantic
