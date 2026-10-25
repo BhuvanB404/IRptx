@@ -44,6 +44,11 @@ irptx Changelog
   reducing identities (-1e30 for maximum, never infinity) and `op_emit` in `.rn` forms.
   `sub` is left out: Emmy cannot construct it (Bhuvan B, 2026-10-26)
 
+- `is_load` lowers a scalar Load to `ld.global.f32` from a global input or a constant buffer
+  (a constant index folds into `[%rd+imm]`, rank-0 and 1-element buffers load at offset 0) and
+  binds the name to a fresh `%f`. Several names (T032), a non-f32 dtype and non-parameter inputs
+  refuse. The four pointwise problems now stop at their first Assign (Bhuvan B, 2026-10-26)
+
 ### Build
 
 - `Makefile`: `make` builds `build/irptx` with `-std=c99 -Wall -Wextra -pedantic

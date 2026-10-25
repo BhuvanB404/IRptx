@@ -831,7 +831,41 @@ static int is_nyet(const kir_node_t *nd)
  * Each stub refuses with E020 naming its kind. A task replaces its stub with
  * the real lowering and keeps the signature (see "The walk" in isel.h). */
 
-static int is_load(is_wk_t *w, const kir_node_t *nd)  { (void)w; return is_nyet(nd); }
+/* Load(names, input, index, dtype): one scalar `ld.global.f32` from a kernel
+ * parameter (a global input or a constant buffer, both just params) into a
+ * fresh %f register bound to the name. A constant index folds into the
+ * address: [%rd+imm], no instruction. Everything is checked before the first
+ * record, so a refusal leaves no half-made load. Not lowered here: dtype
+ * other than f32 (E024; `none` is the inherited f32, ruling C2), a load of
+ * 2 or 4 names (T032 makes those .v2/.v4; guessing consecutive-element
+ * scalar loads now would bake in a layout nobody has checked: E020), and an
+ * input that is not a parameter (E022; T040 adds Smem). */
+static int is_load(is_wk_t *w, const kir_node_t *nd)
+{
+    const kir_val_t *nms = kr_fld(nd, "names"), *in = kr_fld(nd, "input");
+    const kir_val_t *idx = kr_fld(nd, "index"), *dt = kr_fld(nd, "dtype");
+    const kir_val_t *nm;
+    uint32_t arg;
+    int32_t boff;
+    nv_opnd_t flat, areg, dst;
+
+    (void)w;
+    if (!nms || !in || !idx || !dt) return er_fail(E015, "a Load missing names, input, index or dtype");
+    if (nms->tag != KV_LIST || nms->n == 0) return er_fail(E015, "a Load whose names are not a non-empty list");
+    if (in->tag != KV_STR) return er_fail(E015, "a Load whose input is not a name");
+    nm = kr_kid(nms, 0);
+    if (!nm || nm->tag != KV_STR) return er_fail(E015, "a Load name that is not a string");
+    if (dt->tag != KV_NONE && !(dt->tag == KV_DT && strcmp(kr_str(dt->ref), "f32") == 0))
+        return er_fail(E024, "a Load whose dtype is not f32");
+    if (nms->n != 1) return er_fail(E020, "a Load of several values");
+    if (mm_arg(in->ref, &arg)) return 1;
+    if (S.arg[arg].kind == KA_OUT) return er_fail(E022, "a Load from an output buffer");
+    if (mm_gflat(arg, idx, &flat) || mm_gaddr(arg, flat, &areg, &boff)) return 1;
+    if (rg_new(RF_F, &dst)) return 1;
+    if (is_ins(NV_LD_GLOBAL_F32, dst, areg, boff ? is_oimm(boff) : is_onone(), is_onone())) return 1;
+    if (is_cmt(nm->ref)) return 1;
+    return is_bset(nm->ref, dst);
+}
 static int is_asgn(is_wk_t *w, const kir_node_t *nd)  { (void)w; return is_nyet(nd); }
 static int is_wrt(is_wk_t *w, const kir_node_t *nd)   { (void)w; return is_nyet(nd); }
 static int is_acc(is_wk_t *w, const kir_node_t *nd)   { (void)w; return is_nyet(nd); }
