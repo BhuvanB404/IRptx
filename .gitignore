@@ -7,3 +7,4 @@ extra_problems/
 .irptx-cache/
 build/
 __pycache__/
+bin/trunner

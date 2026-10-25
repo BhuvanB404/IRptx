@@ -179,6 +179,19 @@ r_ecode() {
     [ -n "$used" ] || { echo 0; return; }
     comm -23 <(echo "$used") <(echo "$table") | grep -c .
 }
+# Opcodes in nv_op_t (src/irptx.h) with no `[NV_xxx]` designated entry in the
+# mnemonic table in src/emit.c. The table's size check only notices a missing
+# opcode at the end of the enum; this catches one inserted anywhere.
+r_nvtab() {
+    [ -f src/irptx.h ] && [ -f src/emit.c ] || { echo 0; return; }
+    local op n=0 tab
+    tab=$(cstrip src/emit.c)
+    for op in $(cstrip src/irptx.h | awk '/NV_NOP/ {f = 1} f {print} /NV_NCOUNT/ {f = 0}' \
+                | grep -oE '\bNV_[A-Z0-9_]+\b' | grep -vx 'NV_NCOUNT' | sort -u); do
+        printf '%s\n' "$tab" | grep -qF "[$op]" || n=$((n + 1))
+    done
+    echo "$n"
+}
 # Python: any process spawning outside compile.py. In compile.py, each
 # subprocess call must name irptx or cc within its next 3 lines, and
 # shell=True is out. C: no system/popen/exec in src.

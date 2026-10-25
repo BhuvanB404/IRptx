@@ -1,5 +1,7 @@
 # test_sweep.py -- checks sw_parse against captured and derived submit.py output.
 # Run: .venv/bin/python -m unittest discover -s tools -p 'test_*.py'
+import contextlib
+import io
 import sys
 import unittest
 from pathlib import Path
@@ -62,7 +64,11 @@ class ParseTest(unittest.TestCase):
             self.assertIsNotNone(sweep.sw_base(p)[1])          # wrong shape
             p.write_text(json.dumps({"results": []}))
             self.assertEqual(sweep.sw_base(p), ({"results": []}, None))
-            self.assertEqual(sweep.main(["--compare", "--out", str(Path(d) / "none.json")]), 2)
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                rc = sweep.main(["--compare", "--out", str(Path(d) / "none.json")])
+            self.assertEqual(rc, 2)
+            self.assertIn("sweep: cannot use baseline", err.getvalue())
 
     def test_regress(self):
         old = {"results": [{"problem": "a", "status": "pass"}, {"problem": "b", "status": "wrong"}]}

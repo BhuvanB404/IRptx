@@ -14,3 +14,4 @@ stdout     0      stdout writes in src outside emit.c and main.c
 ecode      0      E-codes used without a table entry in src/err.c
 subproc    0      subprocess or exec use outside compile.py, or running anything but our binary or cc
 stale      0      committed bin/irptx older than a file in src
+nvtab      0      opcodes in nv_op_t without a [NV_x] entry in the src/emit.c table

@@ -21,6 +21,33 @@ irptx Changelog
   core ships as a static x86-64 Linux binary, `bin/irptx`, with a one-time
   build from source as the fallback (Bhuvan B, 2026-10-25)
 
+### Front end
+
+- `fe/kirdump.py` loads one kernel IR with Emmy and writes it as KIR text, a generic
+  field-by-field dump with no per-kind code; `fe_meta` refuses with E002 when
+  `meta.json` is missing (Bhuvan B, 2026-10-25)
+
+- `compile.py` writes the KIR text, runs the core on it with a 20 s limit and relays its stdout,
+  stderr and exit code unchanged. It finds the core as `bin/irptx`, else a one-time `cc` build
+  into `.irptx-cache/` (keyed on the sources, renamed into place atomically), else E004.
+  `--kir` prints the KIR text and `--version` prints the version (Bhuvan B, 2026-10-25)
+
+### Core
+
+- `src/main.c` reads KIR from stdin or a file argument (E080 past 1 MiB), prints
+  `irptx 0.1.0` for `--version`, and runs read, select, verify, emit with one `fwrite`
+  only when all succeed. Selection, verify and emission are placeholders for now, so
+  every kernel refuses with E020 and stdout stays empty (Bhuvan B, 2026-10-26)
+
+### Build
+
+- `Makefile`: `make` builds `build/irptx` with `-std=c99 -Wall -Wextra -pedantic
+  -Werror -O2` (CC overridable), `make static` links `bin/irptx` statically,
+  `make test` runs the C unit tests, the smoke test and the Python unittests
+  (skipping the first two until they exist), `make rules` runs the rules check
+  and `make clean` removes build outputs but never the committed `bin/irptx`
+  (Bhuvan B, 2026-10-26)
+
 ### Tools
 
 - `tools/sweep.py` sends every problem through the hackathon runner with
