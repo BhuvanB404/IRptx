@@ -1,0 +1,9 @@
+# Virtualenv, scratch problems, generated output and build products.
+# bin/irptx is committed (the grader needs no C compiler), so it is not listed.
+.venv/
+extra_problems/
+*.ptx
+*.kir
+.irptx-cache/
+build/
+__pycache__/

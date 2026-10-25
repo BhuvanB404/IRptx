@@ -1,0 +1,163 @@
+{
+  "commit": "41478addf0aef6cc07e2f6379336273640605686",
+  "timestamp": "2026-10-25T20:30:35+05:30",
+  "summary": {
+    "1": [
+      0,
+      4
+    ],
+    "2": [
+      0,
+      4
+    ],
+    "3": [
+      0,
+      2
+    ],
+    "4": [
+      0,
+      3
+    ],
+    "5": [
+      0,
+      2
+    ]
+  },
+  "results": [
+    {
+      "problem": "a01_attention",
+      "category": 5,
+      "set": "open",
+      "status": "compile_error",
+      "detail": "that is not PTX: it is empty",
+      "median_us": null,
+      "compile_s": 0.01
+    },
+    {
+      "problem": "a02_attention_128",
+      "category": 5,
+      "set": "open",
+      "status": "compile_error",
+      "detail": "that is not PTX: it is empty",
+      "median_us": null,
+      "compile_s": 0.01
+    },
+    {
+      "problem": "f01_rmsnorm",
+      "category": 4,
+      "set": "open",
+      "status": "compile_error",
+      "detail": "that is not PTX: it is empty",
+      "median_us": null,
+      "compile_s": 0.01
+    },
+    {
+      "problem": "f02_row_softmax",
+      "category": 4,
+      "set": "open",
+      "status": "compile_error",
+      "detail": "that is not PTX: it is empty",
+      "median_us": null,
+      "compile_s": 0.01
+    },
+    {
+      "problem": "f03_l2norm",
+      "category": 4,
+      "set": "open",
+      "status": "compile_error",
+      "detail": "that is not PTX: it is empty",
+      "median_us": null,
+      "compile_s": 0.01
+    },
+    {
+      "problem": "m01_matmul_512",
+      "category": 3,
+      "set": "open",
+      "status": "compile_error",
+      "detail": "that is not PTX: it is empty",
+      "median_us": null,
+      "compile_s": 0.01
+    },
+    {
+      "problem": "m02_matmul_rect",
+      "category": 3,
+      "set": "open",
+      "status": "compile_error",
+      "detail": "that is not PTX: it is empty",
+      "median_us": null,
+      "compile_s": 0.01
+    },
+    {
+      "problem": "p00_scalar_add",
+      "category": 1,
+      "set": "open",
+      "status": "compile_error",
+      "detail": "that is not PTX: it is empty",
+      "median_us": null,
+      "compile_s": 0.01
+    },
+    {
+      "problem": "p01_vector_add",
+      "category": 1,
+      "set": "open",
+      "status": "compile_error",
+      "detail": "that is not PTX: it is empty",
+      "median_us": null,
+      "compile_s": 0.01
+    },
+    {
+      "problem": "p02_scale_shift",
+      "category": 1,
+      "set": "open",
+      "status": "compile_error",
+      "detail": "that is not PTX: it is empty",
+      "median_us": null,
+      "compile_s": 0.01
+    },
+    {
+      "problem": "p03_relu_mul",
+      "category": 1,
+      "set": "open",
+      "status": "compile_error",
+      "detail": "that is not PTX: it is empty",
+      "median_us": null,
+      "compile_s": 0.01
+    },
+    {
+      "problem": "r01_array_sum",
+      "category": 2,
+      "set": "open",
+      "status": "compile_error",
+      "detail": "that is not PTX: it is empty",
+      "median_us": null,
+      "compile_s": 0.01
+    },
+    {
+      "problem": "r02_big_sum",
+      "category": 2,
+      "set": "open",
+      "status": "compile_error",
+      "detail": "that is not PTX: it is empty",
+      "median_us": null,
+      "compile_s": 0.01
+    },
+    {
+      "problem": "r03_mean",
+      "category": 2,
+      "set": "open",
+      "status": "compile_error",
+      "detail": "that is not PTX: it is empty",
+      "median_us": null,
+      "compile_s": 0.01
+    },
+    {
+      "problem": "r04_row_sum",
+      "category": 2,
+      "set": "open",
+      "status": "compile_error",
+      "detail": "that is not PTX: it is empty",
+      "median_us": null,
+      "compile_s": 0.01
+    }
+  ]
+}

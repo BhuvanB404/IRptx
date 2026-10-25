@@ -1,0 +1,49 @@
+# Open-set names for the "openset" rule in tests/rules.sh, one per line.
+#
+# The compiler must work on IR it has never seen, so none of these may appear
+# in src/ or fe/. rules.sh unions this list with whatever it can derive from
+# the hackathon checkout ($HK/problems/*/meta.json) when that exists; this
+# file is the fallback for machines without the checkout (CI, the grader).
+#
+# Only distinctive names are listed. Generic buffer names such as x, w, add,
+# mean, softmax or matmul are deliberately left out: they are ordinary words
+# and would trip on honest code. What is left is the names that could only
+# get into src/ or fe/ by hard-coding a particular problem.
+#
+# Problem ids
+p00_scalar_add
+p01_vector_add
+p02_scale_shift
+p03_relu_mul
+r01_array_sum
+r02_big_sum
+r03_mean
+r04_row_sum
+f01_rmsnorm
+f02_row_softmax
+f03_l2norm
+m01_matmul_512
+m02_matmul_rect
+a01_attention
+a02_attention_128
+# Kernel entry names (hash suffixes included)
+k_add_pointwise
+k_mul_pointwise
+k_sum_1_reduce
+k_div_reduce
+k_matmul
+k_mean_cbd1de
+k_mean_ffcca3
+k_softmax_05263d
+k_matmul_2967be
+k_matmul_softmax_reduce_b55365
+k_matmul_softmax_reduce_6f0029
+# Buffer names with an underscore or digit in them
+div_c1
+add_c1
+mul_c1
+mul_1
+sum_1
+matmul_1
+mean_count
+mean_keepdim_count

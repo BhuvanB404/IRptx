@@ -1,0 +1,16 @@
+# tests/rules.sh fails when a count here rises. Lower one, commit it.
+# Every baseline starts at zero and is meant to stay there.
+#
+# name     count  label
+goto       0      goto, setjmp or longjmp
+alloc      0      allocation calls
+fnptr      0      function pointers
+long       0      functions over 60 lines (C and Python)
+snprintf   0      snprintf calls whose return is discarded
+dash       0      em or en dashes in source, tests, tools and our docs
+ascii      0      non-ASCII lines in src, fe, compile.py, tests
+openset    0      open-set problem ids, kernel names or buffer names in src or fe
+stdout     0      stdout writes in src outside emit.c and main.c
+ecode      0      E-codes used without a table entry in src/err.c
+subproc    0      subprocess or exec use outside compile.py, or running anything but our binary or cc
+stale      0      committed bin/irptx older than a file in src
