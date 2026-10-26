@@ -49,6 +49,12 @@ irptx Changelog
   binds the name to a fresh `%f`. Several names (T032), a non-f32 dtype and non-parameter inputs
   refuse. The four pointwise problems now stop at their first Assign (Bhuvan B, 2026-10-26)
 
+- `is_asgn` lowers an Assign through `op_find` and `op_emit` into a fresh `%f` bound to the
+  name (an accumulator's name writes into its home register). An op outside the table is E021
+  naming it, an arg count off the arity E020, an unbound arg E022, a non-f32 dtype E024; dtype
+  none is the inherited f32. The four pointwise problems now stop at their first Write
+  (Bhuvan B, 2026-10-26)
+
 ### Build
 
 - `Makefile`: `make` builds `build/irptx` with `-std=c99 -Wall -Wextra -pedantic

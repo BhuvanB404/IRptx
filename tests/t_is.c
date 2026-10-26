@@ -158,3 +158,96 @@ static void is09(void)
     PASS();
 }
 TH_REG("is", 9, "a Load from an output buffer is refused E022", is09)
+
+/* ---- Assign (is10..) ---- */
+
+#define LDS LD("p", A0, "dt:f32") LD("q", A0, "dt:f32")
+#define ASG(nm, op, args, dt) "(Assign name=\"" nm "\" op=op:" op " args=[" args "] dtype=" dt ")"
+
+/* The n-th (from 0) record with opcode `op`, or NULL. */
+static const nv_ins_t *is_nth(nv_op_t op, uint32_t n)
+{
+    uint32_t cnt, i;
+    const nv_ins_t *r = is_recs(&cnt);
+
+    for (i = 0; i < cnt; i++)
+        if (r[i].op == op && n-- == 0) return &r[i];
+    return NULL;
+}
+
+static void is10(void)
+{
+    const nv_ins_t *m;
+
+    CHEQ(is_go(XIN, LDS ASG("v", "multiply", "\"p\" \"q\"", "dt:f32")), 0);
+    m = is_nth(NV_MUL_RN_F32, 0);
+    CHECK(m);
+    CHECK(m->dst.kind == OP_REG && m->dst.rf == RF_F);
+    CHECK(m->src[0].v == is_nld(0)->dst.v && m->src[1].v == is_nld(1)->dst.v);
+    CHECK(m->dst.v != m->src[0].v && m->dst.v != m->src[1].v);
+    PASS();
+}
+TH_REG("is", 10, "a binary Assign is one .rn record over the two arg registers into a fresh %f", is10)
+
+static void is11(void)
+{
+    const nv_ins_t *m;
+
+    CHEQ(is_go(XIN, LDS ASG("v", "relu", "\"p\"", "dt:f32")), 0);
+    m = is_nth(NV_MAX_F32, 0);
+    CHECK(m);
+    CHECK(m->src[0].v == is_nld(0)->dst.v);
+    PASS();
+}
+TH_REG("is", 11, "a unary Assign reads one arg register", is11)
+
+static void is12(void)
+{
+    CHEQ(is_go(XIN, LDS ASG("v", "exp", "\"p\"", "dt:f32")), 1);
+    CHECK(strncmp(ie, "error[E021]", 11) == 0);
+    CHECK(strstr(ie, "exp") != NULL);
+    PASS();
+}
+TH_REG("is", 12, "an op outside the table is refused E021 naming the op", is12)
+
+static void is13(void)
+{
+    CHEQ(is_go(XIN, LDS ASG("v", "multiply", "\"p\"", "dt:f32")), 1);
+    CHECK(strncmp(ie, "error[E020]", 11) == 0);
+    CHEQ(is_go(XIN, LDS ASG("v", "relu", "\"p\" \"q\"", "dt:f32")), 1);
+    CHECK(strncmp(ie, "error[E020]", 11) == 0);
+    PASS();
+}
+TH_REG("is", 13, "an Assign whose arg count is not the op's arity is refused E020", is13)
+
+static void is14(void)
+{
+    CHEQ(is_go(XIN, LDS ASG("v", "add", "\"p\" \"zz\"", "dt:f32")), 1);
+    CHECK(strncmp(ie, "error[E022]", 11) == 0);
+    CHECK(strstr(ie, "zz") != NULL);
+    PASS();
+}
+TH_REG("is", 14, "an Assign of an unbound arg is refused E022 naming it", is14)
+
+static void is15(void)
+{
+    CHEQ(is_go(XIN, LDS ASG("v", "add", "\"p\" \"q\"", "none")), 0);
+    CHECK(is_nth(NV_ADD_RN_F32, 0) != NULL);
+    CHEQ(is_go(XIN, LDS ASG("v", "add", "\"p\" \"q\"", "dt:i32")), 1);
+    CHECK(strncmp(ie, "error[E024]", 11) == 0);
+    PASS();
+}
+TH_REG("is", 15, "an Assign with dtype none is the inherited f32; another dtype is E024", is15)
+
+static void is16(void)
+{
+    const nv_ins_t *a, *b;
+
+    CHEQ(is_go(XIN, LDS ASG("v", "add", "\"p\" \"q\"", "dt:f32")
+        ASG("w", "multiply", "\"v\" \"p\"", "dt:f32")), 0);
+    a = is_nth(NV_ADD_RN_F32, 0);
+    b = is_nth(NV_MUL_RN_F32, 0);
+    CHECK(a && b && b->src[0].v == a->dst.v);
+    PASS();
+}
+TH_REG("is", 16, "an Assign result is bound so a later Assign reads it", is16)

@@ -9,6 +9,7 @@
 #include "isel.h"
 #include "kir.h"
 #include "kexpr.h"
+#include "ops.h"
 
 /* ---- State ---- */
 
@@ -866,7 +867,50 @@ static int is_load(is_wk_t *w, const kir_node_t *nd)
     if (is_cmt(nm->ref)) return 1;
     return is_bset(nm->ref, dst);
 }
-static int is_asgn(is_wk_t *w, const kir_node_t *nd)  { (void)w; return is_nyet(nd); }
+
+/* ---- Arithmetic ---- */
+
+/* name = op(args): the op comes from the table by its Emmy name, so an op
+ * outside it (exp, sqrt, reciprocal until T034) is E021 naming it. Arity must
+ * match the arg count (E020); args are names looked up in the bindings
+ * (E022); dtype is f32 or none (the inherited f32, ruling C2; E024
+ * otherwise). A target that is an accumulator's name writes straight into its
+ * home register (H2); anything else gets a fresh %f. */
+static int is_asgn(is_wk_t *w, const kir_node_t *nd)
+{
+    const kir_val_t *nm = kr_fld(nd, "name"), *op = kr_fld(nd, "op");
+    const kir_val_t *as = kr_fld(nd, "args"), *dt = kr_fld(nd, "dtype");
+    const kir_val_t *a0, *a1;
+    opn_t o;
+    nv_opnd_t x, y, dst;
+    is_acc_t *acc;
+    char msg[IR_MAX_NAME + 64];
+
+    (void)w;
+    if (!nm || !op || !as || !dt) return er_fail(E015, "an Assign missing name, op, args or dtype");
+    if (nm->tag != KV_STR || op->tag != KV_OP || as->tag != KV_LIST)
+        return er_fail(E015, "an Assign whose name, op or args have the wrong shape");
+    if (dt->tag != KV_NONE && !(dt->tag == KV_DT && strcmp(kr_str(dt->ref), "f32") == 0))
+        return er_fail(E024, "an Assign whose dtype is not f32");
+    o = op_find(kr_str(op->ref));
+    if (o == OPN_NONE) {
+        strcpy(msg, "the op '");
+        strncat(msg, kr_str(op->ref), IR_MAX_NAME);
+        strcat(msg, "' is not in the op table");
+        return er_fail(E021, msg);
+    }
+    if (as->n != op_arity(o)) return er_fail(E020, "an Assign whose arg count is not the op's arity");
+    a0 = kr_kid(as, 0);
+    a1 = as->n > 1 ? kr_kid(as, 1) : a0;
+    if (!a0 || !a1 || a0->tag != KV_STR || a1->tag != KV_STR)
+        return er_fail(E020, "an Assign arg that is not a name");
+    if (is_find(a0->ref, &x) || is_find(a1->ref, &y)) return 1;
+    acc = is_afind(nm->ref);
+    if (acc) dst = acc->reg;
+    else if (rg_new(RF_F, &dst)) return 1;
+    if (op_emit(o, dst, x, y)) return 1;
+    return is_bset(nm->ref, dst);
+}
 static int is_wrt(is_wk_t *w, const kir_node_t *nd)   { (void)w; return is_nyet(nd); }
 static int is_acc(is_wk_t *w, const kir_node_t *nd)   { (void)w; return is_nyet(nd); }
 static int is_cond(is_wk_t *w, const kir_node_t *nd)  { (void)w; return is_nyet(nd); }
