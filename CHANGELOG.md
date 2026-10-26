@@ -1,6 +1,45 @@
 irptx Changelog
 ===============
 
+## Unreleased
+
+`f02_row_softmax` PASSes, so category 4 is complete and the sweep stands at
+eleven of fifteen: every pointwise kernel, every reduction and every fused one.
+What was missing was two rules the spec had already written down.
+
+### Lowering
+
+- seeding follows R8.2 exactly: an owning loop writes the op's identity and
+  nothing else. Resolving `base` at loop entry was wrong twice over -- f02's
+  `base` (`in0__acc1_sa`) is a name the body computes inside the loop, so the
+  lookup raised E022 before the loop could start, and the identity is what
+  Emmy seeds anyway. `base` keeps its R8.3 job as the update's left operand,
+  so `acc1 = add(acc1 * exp(old_max - new_max), exp(x - new_max))` rescales
+  instead of simply adding, which is what made online softmax come out right
+  (Bhuvan B, 2026-10-26)
+
+- `is_let` lowers a Let: a float literal to `mov.f32 %f, 0fXXXXXXXX` in a
+  fresh `%f` that later statements read as a register, and an integer
+  expression to the s32 value it folds to. A `FlatIndex` value is not in the
+  open set and refuses E020 by kind name (Bhuvan B, 2026-10-26)
+
+- `is_tree` folds one shared array per state side by side: each step loads
+  `buf[j][tid+rlen]` for every state, combines once, and stores `buf[j][tid]`
+  back, then broadcasts `buf[j][0]` into state j. Buffers and states must pair
+  up (E020) and may not outnumber the layout's arrays. A `combine_states`
+  list is lowered once per step instead of once per state -- it already names
+  every state, so the old loop doubled it -- and it runs in a fresh scope so
+  its intermediate names die with the step (R9). `f02_row_softmax` PASS on
+  the runner (Bhuvan B, 2026-10-26)
+
+### Tests
+
+- `is36` to `is39`: the float Let's `0f` hex and the register it binds, the
+  int Let and the refused FlatIndex, a two-state shuffle's ten butterflies
+  against its seven adds (one combine list per step, not two), and a
+  two-state tree's four shared loads, four stores and two broadcasts
+  (Bhuvan B, 2026-10-26)
+
 ## irptx 0.1.0
 
 Ten of the fifteen open problems now pass on the runner: every pointwise kernel,

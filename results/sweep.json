@@ -1,6 +1,6 @@
 {
-  "commit": "77aeaa01442ae5ef805b7d2e69887ec5c0500a7e",
-  "timestamp": "2026-10-26T18:55:38+05:30",
+  "commit": "c5334d47706dfd383dd5a699e0e6535eb9c7c9a6",
+  "timestamp": "2026-10-26T19:58:48+05:30",
   "summary": {
     "1": [
       4,
@@ -15,7 +15,7 @@
       2
     ],
     "4": [
-      2,
+      3,
       3
     ],
     "5": [
@@ -31,7 +31,7 @@
       "status": "compile_error",
       "detail": "error[E020]: irptx: cannot lower a Loop statement",
       "median_us": null,
-      "compile_s": 0.22
+      "compile_s": 0.6
     },
     {
       "problem": "a02_attention_128",
@@ -40,7 +40,7 @@
       "status": "compile_error",
       "detail": "error[E020]: irptx: cannot lower a Loop statement",
       "median_us": null,
-      "compile_s": 0.23
+      "compile_s": 0.53
     },
     {
       "problem": "f01_rmsnorm",
@@ -48,17 +48,17 @@
       "set": "open",
       "status": "pass",
       "detail": "",
-      "median_us": 17.02,
-      "compile_s": 0.23
+      "median_us": 14.82,
+      "compile_s": 0.58
     },
     {
       "problem": "f02_row_softmax",
       "category": 4,
       "set": "open",
-      "status": "compile_error",
-      "detail": "error[E022]: irptx: cannot lower name 'in0__acc1_sa' that is bound in no enclosing scope",
-      "median_us": null,
-      "compile_s": 0.23
+      "status": "pass",
+      "detail": "",
+      "median_us": 16.48,
+      "compile_s": 0.45
     },
     {
       "problem": "f03_l2norm",
@@ -66,8 +66,8 @@
       "set": "open",
       "status": "pass",
       "detail": "",
-      "median_us": 17.47,
-      "compile_s": 0.26
+      "median_us": 15.36,
+      "compile_s": 0.47
     },
     {
       "problem": "m01_matmul_512",
@@ -76,7 +76,7 @@
       "status": "compile_error",
       "detail": "error[E020]: irptx: cannot lower a Init statement",
       "median_us": null,
-      "compile_s": 0.23
+      "compile_s": 0.47
     },
     {
       "problem": "m02_matmul_rect",
@@ -85,7 +85,7 @@
       "status": "compile_error",
       "detail": "error[E020]: irptx: cannot lower a Init statement",
       "median_us": null,
-      "compile_s": 0.23
+      "compile_s": 0.48
     },
     {
       "problem": "p00_scalar_add",
@@ -93,8 +93,8 @@
       "set": "open",
       "status": "pass",
       "detail": "",
-      "median_us": 24.16,
-      "compile_s": 0.22
+      "median_us": 20.1,
+      "compile_s": 0.52
     },
     {
       "problem": "p01_vector_add",
@@ -102,8 +102,8 @@
       "set": "open",
       "status": "pass",
       "detail": "",
-      "median_us": 23.87,
-      "compile_s": 0.25
+      "median_us": 22.69,
+      "compile_s": 0.47
     },
     {
       "problem": "p02_scale_shift",
@@ -111,8 +111,8 @@
       "set": "open",
       "status": "pass",
       "detail": "",
-      "median_us": 16.83,
-      "compile_s": 0.25
+      "median_us": 14.88,
+      "compile_s": 0.48
     },
     {
       "problem": "p03_relu_mul",
@@ -120,8 +120,8 @@
       "set": "open",
       "status": "pass",
       "detail": "",
-      "median_us": 16.96,
-      "compile_s": 0.23
+      "median_us": 14.82,
+      "compile_s": 0.46
     },
     {
       "problem": "r01_array_sum",
@@ -129,8 +129,8 @@
       "set": "open",
       "status": "pass",
       "detail": "",
-      "median_us": 23.94,
-      "compile_s": 0.21
+      "median_us": 20.16,
+      "compile_s": 0.57
     },
     {
       "problem": "r02_big_sum",
@@ -138,8 +138,8 @@
       "set": "open",
       "status": "pass",
       "detail": "",
-      "median_us": 41.57,
-      "compile_s": 0.21
+      "median_us": 37.02,
+      "compile_s": 0.39
     },
     {
       "problem": "r03_mean",
@@ -147,8 +147,8 @@
       "set": "open",
       "status": "pass",
       "detail": "",
-      "median_us": 31.68,
-      "compile_s": 0.21
+      "median_us": 28.51,
+      "compile_s": 0.37
     },
     {
       "problem": "r04_row_sum",
@@ -156,8 +156,8 @@
       "set": "open",
       "status": "pass",
       "detail": "",
-      "median_us": 25.28,
-      "compile_s": 0.21
+      "median_us": 19.9,
+      "compile_s": 0.23
     }
   ]
 }

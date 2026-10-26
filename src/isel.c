@@ -1080,6 +1080,33 @@ static int is_asgn(is_wk_t *w, const kir_node_t *nd)
     if (op_emit(o, dst, x, y)) return 1;
     return is_bset(nm->ref, dst);
 }
+
+/* Let(name, value, dtype): bind a name to a value (Arithmetic). A value that
+ * lowers to an f32 immediate becomes `mov.f32 %f, 0fXXXXXXXX` into a fresh %f
+ * so the name reads as a register everywhere afterwards; an integer
+ * expression lowers to an s32 register or immediate and is bound as it
+ * stands. A FlatIndex value is not in the open set and kx_eval refuses it by
+ * kind name (E020). dtype carries no rule of its own: the value's own dtype
+ * already chose the file, and refusing `int` here would break the integer
+ * Lets the contract asks for. */
+static int is_let(is_wk_t *w, const kir_node_t *nd)
+{
+    const kir_val_t *nm = kr_fld(nd, "name"), *vl = kr_fld(nd, "value");
+    nv_opnd_t v, dst;
+
+    (void)w;
+    if (!nm || !vl) return er_fail(E015, "a Let missing name or value");
+    if (nm->tag != KV_STR) return er_fail(E015, "a Let whose name is not a name");
+    if (kx_eval(vl, &v)) return 1;
+    if (v.kind == OP_FIMM) {
+        if (rg_new(RF_F, &dst)) return 1;
+        if (is_ins(NV_MOV_F32, dst, v, is_onone(), is_onone())) return 1;
+    } else {
+        dst = v;
+    }
+    return is_bset(nm->ref, dst);
+}
+
 /* Write(output, index, values, value_dtype, atomic, swizzle): value i goes
  * to element index+i (the KIR's consecutive layout). One value is one
  * `st.global.f32`; 2 or 4 values are one `st.global.v2/v4.f32` when mm_vec
@@ -1185,10 +1212,10 @@ static int is_stmt(is_wk_t *w, const kir_node_t *nd);
  * the value its first update folds in: the op's identity, or the IR's `base`
  * (a live name) when it gives one. Emits nothing, so a caller can still
  * refuse after this and leave no half-made seed behind. */
-static int is_afrom(const kir_node_t *nd, is_acc_t **out, nv_opnd_t *src)
+static int is_areg(const kir_node_t *nd, is_acc_t **out)
 {
     const kir_val_t *nm = kr_fld(nd, "name"), *op = kr_fld(nd, "op");
-    const kir_val_t *bs = kr_fld(nd, "base"), *dt = kr_fld(nd, "dtype");
+    const kir_val_t *dt = kr_fld(nd, "dtype");
     is_acc_t *a;
     nv_opnd_t reg;
     opn_t o;
@@ -1202,14 +1229,7 @@ static int is_afrom(const kir_node_t *nd, is_acc_t **out, nv_opnd_t *src)
     o = op_find(kr_str(op->ref));
     if (o == OPN_NONE) return er_fail(E021, "an Accum whose op is not in the op table");
     if (op_arity(o) != 2u) return er_fail(E020, "an Accum whose op is not binary");
-    if (!bs || bs->tag == KV_NONE) {
-        if (!op_ident(o, &bits)) return er_fail(E021, "an Accum with no identity and no base");
-        *src = is_ofim(bits);
-    } else if (bs->tag == KV_STR) {
-        if (is_find(bs->ref, src)) return 1;
-    } else {
-        return er_fail(E020, "an Accum whose base is not a name");
-    }
+    if (!op_ident(o, &bits)) return er_fail(E021, "an Accum whose op has no identity");
     a = is_afind(nm->ref);
     if (!a) {
         if (rg_home(nm->ref, RF_F, &reg)) return 1;
@@ -1219,20 +1239,42 @@ static int is_afrom(const kir_node_t *nd, is_acc_t **out, nv_opnd_t *src)
     return 0;
 }
 
-/* Emit the seed into the accumulator's one home register, once, and bind the
- * name where the accumulator is visible. H1: the seed goes down before the
- * loop body runs, not on first sight of the Accum inside it. */
-static int is_aseed(is_acc_t *a, nv_opnd_t src)
+/* is_areg plus the update's left operand (R8.3): the bound `base` name when
+ * the IR gives one, else the accumulator's own home register. `base` is a
+ * name the body computes for this trip (f02 folds acc1 by exp(old_max-new_max)
+ * into it), so it is looked up here, at the Accum statement, and never at
+ * seed time. */
+static int is_afrom(const kir_node_t *nd, is_acc_t **out, nv_opnd_t *src)
+{
+    const kir_val_t *bs = kr_fld(nd, "base");
+
+    if (is_areg(nd, out)) return 1;
+    if (!bs || bs->tag == KV_NONE) {
+        *src = (*out)->reg;
+    } else if (bs->tag == KV_STR) {
+        if (is_find(bs->ref, src)) return 1;
+    } else {
+        return er_fail(E020, "an Accum whose base is not a name");
+    }
+    return 0;
+}
+
+/* Emit the op's identity into the accumulator's one home register, once, and
+ * bind the name where the accumulator is visible. H1: the seed goes down
+ * before the loop body runs, not on first sight of the Accum inside it, and
+ * it is always the identity (R8.2) whatever `base` says. */
+static int is_aseed(is_acc_t *a)
 {
     if (a->seeded) return 0;
-    if (is_ins(NV_MOV_F32, a->reg, src, is_onone(), is_onone())) return 1;
+    if (is_ins(NV_MOV_F32, a->reg, is_ofim(a->ident), is_onone(), is_onone())) return 1;
     a->seeded = 1;
     return is_bset(a->name, a->reg);
 }
 
-/* Accum(name, value, op, dtype, axes, base): acc = op(acc, value) in the
- * accumulator's home register (H2). A loop that owns it has already seeded it
- * (is_sseed); one that does not gets its identity here, on first sight. */
+/* Accum(name, value, op, dtype, axes, base): acc = op(base or acc, value) in
+ * the accumulator's home register (H2, R8.3). A loop that owns it has already
+ * seeded it (is_sseed); one that does not gets its identity here, on first
+ * sight. */
 static int is_acc(is_wk_t *w, const kir_node_t *nd)
 {
     const kir_val_t *vl = kr_fld(nd, "value");
@@ -1243,8 +1285,8 @@ static int is_acc(is_wk_t *w, const kir_node_t *nd)
     if (!vl || vl->tag != KV_STR) return er_fail(E015, "an Accum whose value is not a name");
     if (is_afrom(nd, &a, &src)) return 1;
     if (is_find(vl->ref, &v)) return 1;
-    if (is_aseed(a, src)) return 1;
-    return op_emit((opn_t)a->op, a->reg, a->reg, v);
+    if (is_aseed(a)) return 1;
+    return op_emit((opn_t)a->op, a->reg, src, v);
 }
 
 /* ---- Control Flow (T038, T039) ---- */
@@ -1274,7 +1316,6 @@ static int is_sseed(const kir_node_t *sl, uint32_t ax)
     const kir_val_t *bd = kr_fld(sl, "body"), *sd = kr_fld(sl, "seed");
     const kir_node_t *nd;
     is_acc_t *a;
-    nv_opnd_t src;
     uint32_t i;
 
     if (sd && sd->tag == KV_BOOL && !sd->i) return 0;
@@ -1282,8 +1323,8 @@ static int is_sseed(const kir_node_t *sl, uint32_t ax)
     for (i = 0; i < bd->n; i++) {
         nd = kr_nod(kr_kid(bd, i));
         if (!nd || nd->kind != KR_ACCUM || !is_onax(nd, ax)) continue;
-        if (is_afrom(nd, &a, &src)) return 1;
-        if (is_aseed(a, src)) return 1;
+        if (is_areg(nd, &a)) return 1;
+        if (is_aseed(a)) return 1;
     }
     return 0;
 }
@@ -1498,29 +1539,38 @@ static int is_shfl1(nv_opnd_t d, nv_opnd_t a, uint32_t half, nv_opnd_t mask)
     return 0;
 }
 
-/* The combine of one shuffle step: the IR's own combine statements when it
- * has them (lowered once, they cover every state), else the accumulator op
- * folded with that state's state_b (R9). */
-static int is_comb(is_wk_t *w, const is_ws_t *x, uint32_t j)
+/* The combine of one shuffle or tree step: the IR's own combine statements
+ * when it has them, lowered once per step because one list already names
+ * every state, and in a fresh scope so the names it binds die with the step
+ * (R9); else each state's accumulator op folded with that state's state_b. */
+static int is_comb(is_wk_t *w, const is_ws_t *x)
 {
-    const kir_val_t *sn = kr_kid(x->st, j), *bn = kr_kid(x->sb, j);
     const kir_node_t *nd;
+    const kir_val_t *sn, *bn;
     nv_opnd_t v;
     is_acc_t *a;
-    uint32_t i;
+    uint32_t i, j;
+    int rc = 0;
 
     if (x->cm && x->cm->n) {
-        for (i = 0; i < x->cm->n; i++) {
+        if (is_push()) return 1;
+        for (i = 0; i < x->cm->n && !rc; i++) {
             nd = kr_nod(kr_kid(x->cm, i));
-            if (!nd) return er_fail(E015, "a combine_states item that is not a statement");
-            if (is_stmt(w, nd)) return 1;
+            rc = nd ? is_stmt(w, nd)
+                    : er_fail(E015, "a combine_states item that is not a statement");
         }
-        return 0;
+        if (is_pop()) return 1;
+        return rc;
     }
-    a = is_afind(sn->ref);
-    if (!a) return er_fail(E021, "a shuffle combine with no statements and no accumulator");
-    if (is_find(bn->ref, &v)) return 1;
-    return op_emit((opn_t)a->op, a->reg, a->reg, v);
+    for (j = 0; j < x->n; j++) {
+        sn = kr_kid(x->st, j);
+        bn = kr_kid(x->sb, j);
+        a = is_afind(sn->ref);
+        if (!a) return er_fail(E021, "a combine with no statements and no accumulator");
+        if (is_find(bn->ref, &v)) return 1;
+        if (op_emit((opn_t)a->op, a->reg, a->reg, v)) return 1;
+    }
+    return 0;
 }
 
 /* One butterfly step at `half`: shuffle every state into its state_b, then
@@ -1540,9 +1590,7 @@ static int is_shstep(is_wk_t *w, const is_ws_t *x, uint32_t half, nv_opnd_t mask
         if (is_ins(NV_MOV_B32, sb, sr, is_onone(), is_onone())) return 1;
         if (is_bset(kr_kid(x->sb, j)->ref, sb)) return 1;
     }
-    for (j = 0; j < x->n; j++)
-        if (is_comb(w, x, j)) return 1;
-    return 0;
+    return is_comb(w, x);
 }
 
 /* WarpShuffle(state, state_b, combine_states, length, dtype): halve the
@@ -1584,24 +1632,35 @@ static int is_tid(const kir_val_t *tv, nv_opnd_t *out)
     return er_fail(E022, "a tree tid variable that is not bound");
 }
 
-/* One tree step: each thread under the half point folds the upper half's cell
- * into its own state and writes it back, so the next step halves the array. */
-static int is_tstep(is_wk_t *w, const is_ws_t *x, uint32_t id, nv_opnd_t tid, nv_opnd_t rlen)
+/* One tree step: each thread under the half point loads the upper half's
+ * cell out of every state's own buffer, combines, and writes its own cell
+ * back, so the next step halves all of them at once (R10). `tid + rlen` is
+ * computed once and reused as each buffer's upper index. */
+static int is_tstep(is_wk_t *w, const is_ws_t *x, const uint32_t *ids,
+                    nv_opnd_t tid, nv_opnd_t rlen)
 {
-    const kir_val_t *sn = kr_kid(x->st, 0), *bn = kr_kid(x->sb, 0);
+    const kir_val_t *sn, *bn;
     nv_opnd_t flat, areg, sb, s;
     int32_t boff;
+    uint32_t j;
 
     if (rg_new(RF_R, &flat)) return 1;
     if (is_ins(NV_ADD_S32, flat, tid, rlen, is_onone())) return 1;
-    if (sm_addr(id, flat, &areg, &boff)) return 1;
-    if (rg_home(bn->ref, RF_F, &sb)) return 1;
-    if (is_ins(NV_LD_SHARED_F32, sb, areg, boff ? is_oimm(boff) : is_onone(), is_onone())) return 1;
-    if (is_bset(bn->ref, sb)) return 1;
-    if (is_comb(w, x, 0)) return 1;
-    if (is_find(sn->ref, &s)) return 1;
-    if (sm_addr(id, tid, &areg, &boff)) return 1;
-    return is_ins(NV_ST_SHARED_F32, is_onone(), areg, boff ? is_oimm(boff) : is_onone(), s);
+    for (j = 0; j < x->n; j++) {
+        bn = kr_kid(x->sb, j);
+        if (sm_addr(ids[j], flat, &areg, &boff)) return 1;
+        if (rg_home(bn->ref, RF_F, &sb)) return 1;
+        if (is_ins(NV_LD_SHARED_F32, sb, areg, boff ? is_oimm(boff) : is_onone(), is_onone())) return 1;
+        if (is_bset(bn->ref, sb)) return 1;
+    }
+    if (is_comb(w, x)) return 1;
+    for (j = 0; j < x->n; j++) {
+        sn = kr_kid(x->st, j);
+        if (is_find(sn->ref, &s)) return 1;
+        if (sm_addr(ids[j], tid, &areg, &boff)) return 1;
+        if (is_ins(NV_ST_SHARED_F32, is_onone(), areg, boff ? is_oimm(boff) : is_onone(), s)) return 1;
+    }
+    return 0;
 }
 
 /* TreeHalve(bufs, state, state_b, combine_states, length, tid_var, dtype,
@@ -1617,26 +1676,30 @@ static int is_tree(is_wk_t *w, const kir_node_t *nd)
     const kir_val_t *in = kr_fld(nd, "inner"), *bc = kr_fld(nd, "barrier_count");
     const kir_val_t *bi = kr_fld(nd, "barrier_id"), *bn;
     nv_opnd_t tid, rlen, pv, pq, areg, st;
+    uint32_t ids[IR_MAX_SMEM];
     int32_t len = 0, boff = 0, bid = 0;
-    uint32_t id = 0, ltop = 0, lend = 0, lskip = 0;
+    uint32_t ltop = 0, lend = 0, lskip = 0, j;
     int isc = 0;
 
     if (is_wsget(nd, &x)) return 1;
-    if (x.n != 1u) return er_fail(E020, "a tree over more than one state");
+    if (x.n > IR_MAX_SMEM)
+        return er_fail(E020, "a tree over more states than the layout has arrays");
     if (in && in->tag != KV_NONE) return er_fail(E020, "a tree with an inner state");
     if (bc && bc->tag != KV_NONE) return er_fail(E020, "a tree with a barrier count");
-    if (!bf || bf->tag != KV_LIST || bf->n != 1u)
-        return er_fail(E020, "a tree over no shared buffer or over several");
-    bn = kr_kid(bf, 0);
-    if (!bn || bn->tag != KV_STR) return er_fail(E015, "a tree buffer that is not a name");
+    if (!bf || bf->tag != KV_LIST || bf->n != x.n)
+        return er_fail(E020, "a tree whose buffers and states do not pair up");
     if (kx_fold(kr_fld(nd, "length"), &len, &isc)) return 1;
     if (!isc || len < 1 || !is_pow2(len))
         return er_fail(E020, "a tree whose length is not a power of two");
     if (bi && bi->tag == KV_INT) bid = (int32_t)bi->i;
     if (bid < 0 || bid > 15) return er_fail(E059, "a tree barrier id outside 0..15");
-    if (sm_find(bn->ref, &id)) return 1;
-    if (S.sm.arr[id].elems < (uint32_t)len)
-        return er_fail(E059, "a tree longer than the shared array it folds");
+    for (j = 0; j < x.n; j++) {
+        bn = kr_kid(bf, j);
+        if (!bn || bn->tag != KV_STR) return er_fail(E015, "a tree buffer that is not a name");
+        if (sm_find(bn->ref, &ids[j])) return 1;
+        if (S.sm.arr[ids[j]].elems < (uint32_t)len)
+            return er_fail(E059, "a tree longer than the shared array it folds");
+    }
     if (is_tid(tv, &tid)) return 1;
     if (is_lbl(&ltop) || is_lbl(&lend) || is_lbl(&lskip)) return 1;
     if (rg_new(RF_R, &rlen) || rg_new(RF_P, &pv) || rg_new(RF_P, &pq)) return 1;
@@ -1648,19 +1711,21 @@ static int is_tree(is_wk_t *w, const kir_node_t *nd)
     if (is_ins(NV_SETP_LT_S32, pq, tid, rlen, is_onone())) return 1;
     if (is_ins(NV_BRA, is_onone(), is_olbl(lskip), is_onone(), is_onone())) return 1;
     if (is_guard(pq, 1)) return 1;
-    if (is_tstep(w, &x, id, tid, rlen)) return 1;
+    if (is_tstep(w, &x, ids, tid, rlen)) return 1;
     if (is_ins(NV_LABEL, is_olbl(lskip), is_onone(), is_onone(), is_onone())) return 1;
     if (is_ins(NV_BAR_SYNC, is_onone(), is_oimm(bid), is_onone(), is_onone())) return 1;
     if (is_ins(NV_SHR_S32, rlen, rlen, is_oimm(1), is_onone())) return 1;
     if (is_ins(NV_BRA, is_onone(), is_olbl(ltop), is_onone(), is_onone())) return 1;
     if (is_ins(NV_LABEL, is_olbl(lend), is_onone(), is_onone(), is_onone())) return 1;
-    if (is_find(kr_kid(x.st, 0)->ref, &st)) return 1;
-    if (sm_addr(id, is_oimm(0), &areg, &boff)) return 1;
-    return is_ins(NV_LD_SHARED_F32, st, areg, boff ? is_oimm(boff) : is_onone(), is_onone());
+    for (j = 0; j < x.n; j++) {          /* buf[j][0] holds the total: broadcast it */
+        if (is_find(kr_kid(x.st, j)->ref, &st)) return 1;
+        if (sm_addr(ids[j], is_oimm(0), &areg, &boff)) return 1;
+        if (is_ins(NV_LD_SHARED_F32, st, areg, boff ? is_oimm(boff) : is_onone(), is_onone())) return 1;
+    }
+    return 0;
 }
 
 /* ---- Statement kinds not lowered yet ---- */
-static int is_let(is_wk_t *w, const kir_node_t *nd)   { (void)w; return is_nyet(nd); }
 static int is_loop(is_wk_t *w, const kir_node_t *nd)  { (void)w; return is_nyet(nd); }
 static int is_init(is_wk_t *w, const kir_node_t *nd)  { (void)w; return is_nyet(nd); }
 static int is_cpa(is_wk_t *w, const kir_node_t *nd)   { (void)w; return is_nyet(nd); }

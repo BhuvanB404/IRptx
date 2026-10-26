@@ -2,8 +2,9 @@
  * reader and is_run, then the record list is read back with is_recs. Load
  * lowering first (is01..is25), then the reductions: accumulators and strided
  * loops (is26..), branches and shared memory (is29..), the warp shuffle
- * (is32..) and the shared tree (is34..). T064 continues the numbering with
- * the nested loop fixtures. */
+ * (is32..) and the shared tree (is34..), then Let bindings and the
+ * multi-state combines (is36..). T064 continues the numbering with the
+ * nested loop fixtures. */
 
 #include <stdint.h>
 #include <stdio.h>
@@ -603,3 +604,77 @@ static void is35(void)
     PASS();
 }
 TH_REG("is", 35, "a tree with an inner state or a length of 3 is refused E020", is35)
+
+/* ---- Let bindings and multi-state combines (T057, T060) ---- */
+
+#define LET(nm, val, dt) "(Let name=\"" nm "\" value=" val " dtype=" dt ")"
+#define LETF "(Literal value=0x1.0000000000000p+0f dtype=\"float\")"
+#define TWOACC ACCX("acc0", "p", "add", "\"a1\"") ACCX("acc1", "p", "add", "\"a1\"")
+#define CM2 "combine_states=[(Assign name=\"acc0\" op=op:add args=[\"acc0\" \"acc0__o\"] dtype=none) " \
+    "(Assign name=\"acc1\" op=op:add args=[\"acc1\" \"acc1__o\"] dtype=none)]"
+#define WSC2 "(WarpShuffle state=[\"acc0\" \"acc1\"] state_b=[\"acc0__o\" \"acc1__o\"] " \
+    "combine_states=[(Assign name=\"acc0\" op=op:add args=[\"acc0\" \"acc0__o\"] dtype=none)] " \
+    "length=32 dtype=dt:f32)"
+#define TRE2 "(TreeHalve bufs=[\"sm0\" \"sm1\"] state=[\"acc0\" \"acc1\"] " \
+    "state_b=[\"acc0__o\" \"acc1__o\"] " CM2 \
+    " length=4 tid_var=\"warp\" dtype=dt:f32 barrier_id=0 barrier_count=none inner=none)"
+
+/* The float half of the contract: 0f hex into a fresh %f, read back by a
+ * later Assign. `one` is 1.0 so the mul's second source is that register. */
+static void is36(void)
+{
+    const nv_ins_t *m;
+
+    CHEQ(is_gox(XIN, LET("one", LETF, "dt:f32") LD("p", A0, "dt:f32")
+        "(Assign name=\"q\" op=op:multiply args=[\"p\" \"one\"] dtype=dt:f32)"
+        WR("y", A0, "\"q\"", WOK), 8, 8), 0);
+    CHEQ(is_cnt(NV_MOV_F32), 1u);
+    m = is_nth(NV_MOV_F32, 0);
+    CHECK(m && m->dst.kind == OP_REG && m->dst.rf == RF_F);
+    CHECK(m && m->src[0].kind == OP_FIMM && m->src[0].v == 0x3F800000u);
+    CHEQ(is_cnt(NV_MUL_RN_F32), 1u);
+    PASS();
+}
+TH_REG("is", 36, "a float Let is mov.f32 %f, 0f... and its name reads as that register", is36)
+
+/* The integer half, and the one value the contract refuses. */
+static void is37(void)
+{
+    CHEQ(is_gox(XIN, LET("k", "(Literal value=3 dtype=\"int\")", "dt:int")
+        LD("p", "(Var name=\"k\")", "dt:f32") WR("y", A0, "\"p\"", WOK), 8, 8), 0);
+    CHEQ(is_gox(XIN, LET("q", "(FlatIndex)", "dt:f32") WR("y", A0, "\"q\"", WOK), 8, 8), 1);
+    CHECK(strncmp(ie, "error[E020]", 11) == 0);
+    /* A refusal must not poison the state the next kernel starts from. */
+    CHEQ(is_gox(XIN, LD("p", A0, "dt:f32") WR("y", A0, "\"p\"", WOK), 8, 8), 0);
+    PASS();
+}
+TH_REG("is", 37, "an int Let folds and binds; a FlatIndex value is refused E020", is37)
+
+/* Two states: both are shuffled, and the combine list is one list per step,
+ * not one per state -- the difference is 7 adds against 12. */
+static void is38(void)
+{
+    CHEQ(is_gox(XINR, LD("p", A0, "dt:f32") TWOACC WSC2
+        WR("y", A0, "\"acc0\"", WOK), 32, 32), 0);
+    CHEQ(is_cnt(NV_SHFL_BFLY), 10u);       /* 2 states x 5 steps */
+    CHEQ(is_cnt(NV_MOV_F32), 2u);          /* one identity seed per accumulator */
+    CHEQ(is_cnt(NV_ADD_RN_F32), 7u);       /* the 2 Accums, then the list once a step */
+    PASS();
+}
+TH_REG("is", 38, "a two-state WarpShuffle shuffles both and lowers one combine list per step", is38)
+
+/* Two buffers folded side by side: every state loads and stores its own cell,
+ * and each buf[j][0] is broadcast back at the end. */
+static void is39(void)
+{
+    CHEQ(is_gox(XINR, LD("p", A0, "dt:f32") TWOACC SM("sm0", 4) SM("sm1", 4)
+        CND(LANE0, WR("sm0", "(Var name=\"warp\")", "\"acc0\"", WOK)
+                   WR("sm1", "(Var name=\"warp\")", "\"acc1\"", WOK), "")
+        SYN(0) TRE2 WR("y", A0, "\"acc0\"", WOK), 128, 128), 0);
+    CHEQ(is_cnt(NV_LD_SHARED_F32), 4u);    /* the fold, and the broadcast of buf[j][0] */
+    CHEQ(is_cnt(NV_ST_SHARED_F32), 4u);    /* the Cond's two stores, and the fold's */
+    CHEQ(is_cnt(NV_BAR_SYNC), 2u);         /* the Sync, and one in the loop body */
+    CHEQ(is_cnt(NV_ADD_RN_F32), 4u);       /* the 2 Accums, then the 2 combines */
+    PASS();
+}
+TH_REG("is", 39, "a two-state TreeHalve folds both buffers and broadcasts buf[j][0]", is39)
