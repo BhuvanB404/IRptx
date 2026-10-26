@@ -1,6 +1,6 @@
 {
-  "commit": "c5334d47706dfd383dd5a699e0e6535eb9c7c9a6",
-  "timestamp": "2026-10-26T19:58:48+05:30",
+  "commit": "cadaf87ff456ad474c982e71a7c1c908aaa0826c",
+  "timestamp": "2026-10-26T21:23:56+05:30",
   "summary": {
     "1": [
       4,
@@ -11,7 +11,7 @@
       4
     ],
     "3": [
-      0,
+      2,
       2
     ],
     "4": [
@@ -19,7 +19,7 @@
       3
     ],
     "5": [
-      0,
+      2,
       2
     ]
   },
@@ -28,19 +28,19 @@
       "problem": "a01_attention",
       "category": 5,
       "set": "open",
-      "status": "compile_error",
-      "detail": "error[E020]: irptx: cannot lower a Loop statement",
-      "median_us": null,
-      "compile_s": 0.6
+      "status": "pass",
+      "detail": "",
+      "median_us": 127.46,
+      "compile_s": 0.7
     },
     {
       "problem": "a02_attention_128",
       "category": 5,
       "set": "open",
-      "status": "compile_error",
-      "detail": "error[E020]: irptx: cannot lower a Loop statement",
-      "median_us": null,
-      "compile_s": 0.53
+      "status": "pass",
+      "detail": "",
+      "median_us": 49.73,
+      "compile_s": 1.31
     },
     {
       "problem": "f01_rmsnorm",
@@ -48,8 +48,8 @@
       "set": "open",
       "status": "pass",
       "detail": "",
-      "median_us": 14.82,
-      "compile_s": 0.58
+      "median_us": 17.34,
+      "compile_s": 0.97
     },
     {
       "problem": "f02_row_softmax",
@@ -57,8 +57,8 @@
       "set": "open",
       "status": "pass",
       "detail": "",
-      "median_us": 16.48,
-      "compile_s": 0.45
+      "median_us": 17.34,
+      "compile_s": 0.38
     },
     {
       "problem": "f03_l2norm",
@@ -66,26 +66,26 @@
       "set": "open",
       "status": "pass",
       "detail": "",
-      "median_us": 15.36,
-      "compile_s": 0.47
+      "median_us": 16.51,
+      "compile_s": 0.4
     },
     {
       "problem": "m01_matmul_512",
       "category": 3,
       "set": "open",
-      "status": "compile_error",
-      "detail": "error[E020]: irptx: cannot lower a Init statement",
-      "median_us": null,
-      "compile_s": 0.47
+      "status": "pass",
+      "detail": "",
+      "median_us": 116.86,
+      "compile_s": 0.21
     },
     {
       "problem": "m02_matmul_rect",
       "category": 3,
       "set": "open",
-      "status": "compile_error",
-      "detail": "error[E020]: irptx: cannot lower a Init statement",
-      "median_us": null,
-      "compile_s": 0.48
+      "status": "pass",
+      "detail": "",
+      "median_us": 16.38,
+      "compile_s": 0.21
     },
     {
       "problem": "p00_scalar_add",
@@ -93,8 +93,8 @@
       "set": "open",
       "status": "pass",
       "detail": "",
-      "median_us": 20.1,
-      "compile_s": 0.52
+      "median_us": 24.9,
+      "compile_s": 0.22
     },
     {
       "problem": "p01_vector_add",
@@ -102,8 +102,8 @@
       "set": "open",
       "status": "pass",
       "detail": "",
-      "median_us": 22.69,
-      "compile_s": 0.47
+      "median_us": 24.03,
+      "compile_s": 0.24
     },
     {
       "problem": "p02_scale_shift",
@@ -111,8 +111,8 @@
       "set": "open",
       "status": "pass",
       "detail": "",
-      "median_us": 14.88,
-      "compile_s": 0.48
+      "median_us": 17.02,
+      "compile_s": 0.23
     },
     {
       "problem": "p03_relu_mul",
@@ -120,8 +120,8 @@
       "set": "open",
       "status": "pass",
       "detail": "",
-      "median_us": 14.82,
-      "compile_s": 0.46
+      "median_us": 17.06,
+      "compile_s": 0.27
     },
     {
       "problem": "r01_array_sum",
@@ -129,8 +129,8 @@
       "set": "open",
       "status": "pass",
       "detail": "",
-      "median_us": 20.16,
-      "compile_s": 0.57
+      "median_us": 23.97,
+      "compile_s": 0.27
     },
     {
       "problem": "r02_big_sum",
@@ -138,8 +138,8 @@
       "set": "open",
       "status": "pass",
       "detail": "",
-      "median_us": 37.02,
-      "compile_s": 0.39
+      "median_us": 41.28,
+      "compile_s": 0.26
     },
     {
       "problem": "r03_mean",
@@ -147,8 +147,8 @@
       "set": "open",
       "status": "pass",
       "detail": "",
-      "median_us": 28.51,
-      "compile_s": 0.37
+      "median_us": 32.13,
+      "compile_s": 0.21
     },
     {
       "problem": "r04_row_sum",
@@ -156,7 +156,7 @@
       "set": "open",
       "status": "pass",
       "detail": "",
-      "median_us": 19.9,
+      "median_us": 24.48,
       "compile_s": 0.23
     }
   ]

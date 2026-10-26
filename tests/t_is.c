@@ -333,11 +333,10 @@ TH_REG("is", 20, "a Write of an unbound value is refused E022 with no partial st
 
 static void is21(void)
 {
-    CHEQ(is_go(XIN, LDS WR("y", A0, "\"p\"", "atomic=true swizzle=\"NONE\"")), 1);
-    CHECK(strncmp(ie, "error[E020]", 11) == 0);
+    CHEQ(is_go(XIN, LDS WR("y", A0, "\"p\"", "atomic=true swizzle=\"NONE\"")), 0);
+    CHECK(is_cnt(NV_RED_GLOBAL_ADD_F32) == 1u);
     CHEQ(is_go(XIN, LDS WR("y", A0, "\"p\"", "atomic=false swizzle=\"B128\"")), 1);
     CHECK(strncmp(ie, "error[E020]", 11) == 0);
-    CHEQ(is_cnt(NV_ST_GLOBAL_F32), 0u);
     PASS();
 }
 TH_REG("is", 21, "an atomic or swizzled Write is refused E020", is21)

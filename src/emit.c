@@ -112,6 +112,7 @@ static const em_ent_t EM_TAB[] = {
     [NV_ST_SHARED_V4_F32] = { "st.shared.v4.f32", SH_STV, 4, NULL },
     [NV_RED_GLOBAL_ADD_F32] = { "red.global.add.f32", SH_ST, 0, NULL },
     [NV_CP_ASYNC_CA] = { "cp.async.ca.shared.global", SH_CPA, 0, "4" },
+    [NV_CP_ASYNC_CA8] = { "cp.async.ca.shared.global", SH_CPA, 0, "8" },
     [NV_CP_ASYNC_CG] = { "cp.async.cg.shared.global", SH_CPA, 0, "16" },
     [NV_CP_ASYNC_COMMIT] = G("cp.async.commit_group"),
     [NV_CP_ASYNC_WAIT] = G("cp.async.wait_group"),

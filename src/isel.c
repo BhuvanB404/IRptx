@@ -1174,7 +1174,6 @@ static int is_wrt(is_wk_t *w, const kir_node_t *nd)
     if (vs->tag != KV_LIST || vs->n == 0) return er_fail(E015, "a Write whose values are not a non-empty list");
     if (dt->tag != KV_NONE && !(dt->tag == KV_DT && strcmp(kr_str(dt->ref), "f32") == 0))
         return er_fail(E024, "a Write whose value_dtype is not f32");
-    if (at && at->tag == KV_BOOL && at->i) return er_fail(E020, "an atomic Write");
     if (sw && sw->tag == KV_STR && strcmp(kr_str(sw->ref), "NONE") != 0)
         return er_fail(E020, "a Write with a swizzle");
     n = vs->n;
@@ -1199,6 +1198,14 @@ static int is_wrt(is_wk_t *w, const kir_node_t *nd)
         if (sm_addr(sid, flat, &areg, &boff)) return 1;
     } else if (mm_gaddr(arg, flat, &areg, &boff)) return 1;
     if (boff > INT32_MAX - 4 * (int32_t)IS_MAX_VEC) return er_fail(E059, "a Write offset out of range");
+    if (at && at->tag == KV_BOOL && at->i) {
+        if (sh) return er_fail(E020, "an atomic Write to shared memory");
+        for (i = 0; i < n; i++) {
+            int32_t o = boff + 4 * (int32_t)i;
+            if (is_ins(NV_RED_GLOBAL_ADD_F32, is_onone(), areg, o ? is_oimm(o) : is_onone(), val[i])) return 1;
+        }
+        return 0;
+    }
     vec = n > 1u && mm_vec(dim, rank, idx, n) && (!sh || n == 4u);
     return is_sto(val, n, areg, boff, vec, sh);
 }
@@ -1234,6 +1241,9 @@ static int is_areg(const kir_node_t *nd, is_acc_t **out)
     if (!a) {
         if (rg_home(nm->ref, RF_F, &reg)) return 1;
         if (is_aadd(nm->ref, reg, (uint8_t)o, bits, 0, &a)) return 1;
+    } else if (a->op == OPN_NONE) {
+        a->op = (uint8_t)o;
+        a->ident = bits;
     }
     *out = a;
     return 0;
@@ -1324,6 +1334,7 @@ static int is_sseed(const kir_node_t *sl, uint32_t ax)
         nd = kr_nod(kr_kid(bd, i));
         if (!nd || nd->kind != KR_ACCUM || !is_onax(nd, ax)) continue;
         if (is_areg(nd, &a)) return 1;
+        if (a->has_init) continue;
         if (is_aseed(a)) return 1;
     }
     return 0;
@@ -1390,15 +1401,21 @@ static int is_sloop(is_wk_t *w, const kir_node_t *nd)
  * for that; the guard the walk carries is what keeps it from hanging. */
 static int is_cloop(const is_frm_t *f)
 {
-    const kir_val_t *sp = kr_fld(f->nd, "step"), *ax = kr_fld(f->nd, "axis");
+    const kir_val_t *ax = kr_fld(f->nd, "axis");
     const kir_node_t *a = kr_nod(ax);
     const kir_val_t *an = a ? kr_fld(a, "name") : NULL;
-    nv_opnd_t home, stp;
+    nv_opnd_t home;
 
-    if (!an || an->tag != KV_STR) return er_fail(E015, "a StridedLoop axis with no name");
+    if (!an || an->tag != KV_STR) return er_fail(E015, "a loop axis with no name");
     if (rg_home(an->ref, RF_R, &home)) return 1;
-    if (kx_eval(sp, &stp)) return 1;
-    if (is_ins(NV_ADD_S32, home, home, stp, is_onone())) return 1;
+    if (f->nd->kind == KR_LOOP) {
+        if (is_ins(NV_ADD_S32, home, home, is_oimm(1), is_onone())) return 1;
+    } else {
+        const kir_val_t *sp = kr_fld(f->nd, "step");
+        nv_opnd_t stp;
+        if (kx_eval(sp, &stp)) return 1;
+        if (is_ins(NV_ADD_S32, home, home, stp, is_onone())) return 1;
+    }
     if (is_ins(NV_BRA, is_onone(), is_olbl(f->a), is_onone(), is_onone())) return 1;
     return is_ins(NV_LABEL, is_olbl(f->b), is_onone(), is_onone(), is_onone());
 }
@@ -1726,11 +1743,140 @@ static int is_tree(is_wk_t *w, const kir_node_t *nd)
 }
 
 /* ---- Statement kinds not lowered yet ---- */
-static int is_loop(is_wk_t *w, const kir_node_t *nd)  { (void)w; return is_nyet(nd); }
-static int is_init(is_wk_t *w, const kir_node_t *nd)  { (void)w; return is_nyet(nd); }
-static int is_cpa(is_wk_t *w, const kir_node_t *nd)   { (void)w; return is_nyet(nd); }
-static int is_cpc(is_wk_t *w, const kir_node_t *nd)   { (void)w; return is_nyet(nd); }
-static int is_cpw(is_wk_t *w, const kir_node_t *nd)   { (void)w; return is_nyet(nd); }
+static int is_loop(is_wk_t *w, const kir_node_t *nd)
+{
+    const kir_val_t *bd = kr_fld(nd, "body");
+    nv_opnd_t home, pv;
+    uint32_t ax = 0, ltop = 0, lend = 0;
+    int32_t ext = 0;
+
+    if (!bd || bd->tag != KV_LIST) return er_fail(E015, "a Loop with no body list");
+    if (is_lax(nd, &ax, &ext)) return 1;
+    if (is_sseed(nd, ax)) return 1;
+    if (is_lbl(&ltop) || is_lbl(&lend)) return 1;
+    if (is_wvisit(w, bd, IC_LOOP, 1, nd, ltop, lend)) return 1;
+    if (rg_home(ax, RF_R, &home) || is_bset(ax, home)) return 1;
+    if (is_ins(NV_MOV_S32, home, is_oimm(0), is_onone(), is_onone())) return 1;
+    if (is_ins(NV_LABEL, is_olbl(ltop), is_onone(), is_onone(), is_onone())) return 1;
+    if (rg_new(RF_P, &pv)) return 1;
+    if (is_ins(NV_SETP_GE_S32, pv, home, is_oimm(ext), is_onone())) return 1;
+    if (is_ins(NV_BRA, is_onone(), is_olbl(lend), is_onone(), is_onone())) return 1;
+    return is_guard(pv, 0);
+}
+static int is_init(is_wk_t *w, const kir_node_t *nd)
+{
+    const kir_val_t *nm = kr_fld(nd, "name");
+    const kir_val_t *iv = kr_fld(nd, "identity");
+    const kir_val_t *dt = kr_fld(nd, "dtype");
+    is_acc_t *a;
+    nv_opnd_t reg;
+    uint32_t bits = 0;
+    float f;
+
+    (void)w;
+    if (!nm || !iv || !dt) return er_fail(E015, "an Init missing name, identity or dtype");
+    if (nm->tag != KV_STR) return er_fail(E015, "an Init whose name is not a string");
+    if (dt->tag != KV_NONE && !(dt->tag == KV_DT && strcmp(kr_str(dt->ref), "f32") == 0))
+        return er_fail(E024, "an Init whose dtype is not f32");
+    if (iv->tag == KV_FLT) {
+        bits = iv->fbits;
+    } else if (iv->tag == KV_INT) {
+        f = (float)iv->i;
+        memcpy(&bits, &f, sizeof bits);
+    } else {
+        return er_fail(E015, "an Init whose identity is not a number");
+    }
+    if (is_afind(nm->ref)) return er_fail(E000, "an accumulator registered twice");
+    if (rg_home(nm->ref, RF_F, &reg)) return 1;
+    if (is_aadd(nm->ref, reg, OPN_NONE, bits, 1, &a)) return 1;
+    if (is_ins(NV_MOV_F32, a->reg, is_ofim(bits), is_onone(), is_onone())) return 1;
+    a->seeded = 1;
+    return is_bset(nm->ref, a->reg);
+}
+static int is_cpadd(nv_opnd_t a, nv_opnd_t b, nv_opnd_t *out)
+{
+    if (a.kind == OP_IMM && b.kind == OP_IMM) {
+        *out = is_oimm((int32_t)(a.v + b.v));
+        return 0;
+    }
+    if (rg_new(RF_R, out)) return 1;
+    if (a.kind == OP_IMM)
+        return is_ins(NV_ADD_S32, *out, b, is_oimm((int32_t)a.v), is_onone());
+    if (b.kind == OP_IMM)
+        return is_ins(NV_ADD_S32, *out, a, is_oimm((int32_t)b.v), is_onone());
+    return is_ins(NV_ADD_S32, *out, a, b, is_onone());
+}
+
+static int is_cpa(is_wk_t *w, const kir_node_t *nd)
+{
+    const kir_val_t *sm = kr_fld(nd, "smem");
+    const kir_val_t *si = kr_fld(nd, "smem_index");
+    const kir_val_t *src = kr_fld(nd, "src");
+    const kir_val_t *ri = kr_fld(nd, "src_index");
+    const kir_val_t *nb = kr_fld(nd, "nbytes");
+    const kir_val_t *sw = kr_fld(nd, "swizzle");
+    const kir_val_t *li = kr_fld(nd, "lane_index");
+    uint32_t sid = 0, arg = 0;
+    int32_t nbytes = 0, boff = 0, src_boff = 0;
+    const int32_t *dim, *src_dim;
+    uint32_t rank, src_rank;
+    nv_opnd_t flat_sm, flat_ln, flat_comb, flat_src;
+    nv_opnd_t areg, src_areg;
+    nv_op_t op;
+    nv_ins_t *r;
+
+    (void)w;
+    if (!sm || sm->tag != KV_STR) return er_fail(E015, "a CpAsyncCopy with no smem name");
+    if (!si || si->tag != KV_LIST) return er_fail(E015, "a CpAsyncCopy with no smem_index");
+    if (!src || src->tag != KV_STR) return er_fail(E015, "a CpAsyncCopy with no src name");
+    if (!ri || ri->tag != KV_LIST) return er_fail(E015, "a CpAsyncCopy with no src_index");
+    if (!nb || nb->tag != KV_INT) return er_fail(E015, "a CpAsyncCopy with no nbytes");
+    nbytes = (int32_t)nb->i;
+    if (nbytes != 4 && nbytes != 8 && nbytes != 16)
+        return er_fail(E020, "a CpAsyncCopy whose nbytes is not 4, 8 or 16");
+    if (sw && sw->tag == KV_STR && strcmp(kr_str(sw->ref), "NONE") != 0)
+        return er_fail(E020, "a CpAsyncCopy with a swizzle");
+    if (!is_shv(sm->ref, &sid)) return er_fail(E022, "a CpAsyncCopy whose smem is not declared");
+    dim = S.sm.arr[sid].dim;
+    rank = S.sm.arr[sid].rank;
+    if (mm_flat(dim, rank, si, &flat_sm)) return 1;
+    flat_comb = flat_sm;
+    if (li && li->tag == KV_LIST) {
+        if (mm_flat(dim, rank, li, &flat_ln)) return 1;
+        if (is_cpadd(flat_comb, flat_ln, &flat_comb)) return 1;
+    }
+    if (sm_addr(sid, flat_comb, &areg, &boff)) return 1;
+    if (mm_arg(src->ref, &arg)) return 1;
+    src_dim = S.arg[arg].dim;
+    src_rank = S.arg[arg].rank;
+    if (mm_flat(src_dim, src_rank, ri, &flat_src)) return 1;
+    if (mm_gaddr(arg, flat_src, &src_areg, &src_boff)) return 1;
+    if (nbytes == 16) op = NV_CP_ASYNC_CG;
+    else if (nbytes == 8) op = NV_CP_ASYNC_CA8;
+    else op = NV_CP_ASYNC_CA;
+    r = is_new(op);
+    if (!r) return 1;
+    r->dst = is_onone();
+    r->src[0] = areg;
+    r->src[1] = (boff ? is_oimm(boff) : is_onone());
+    r->src[2] = src_areg;
+    r->src[3] = (src_boff ? is_oimm(src_boff) : is_onone());
+    r->nsrc = 4u;
+    return 0;
+}
+static int is_cpc(is_wk_t *w, const kir_node_t *nd)
+{
+    (void)w; (void)nd;
+    return is_ins(NV_CP_ASYNC_COMMIT, is_onone(), is_onone(), is_onone(), is_onone());
+}
+static int is_cpw(is_wk_t *w, const kir_node_t *nd)
+{
+    const kir_val_t *g = kr_fld(nd, "group");
+    int32_t grp = 0;
+    (void)w;
+    if (g && g->tag == KV_INT) grp = (int32_t)g->i;
+    return is_ins(NV_CP_ASYNC_WAIT, is_onone(), is_oimm(grp), is_onone(), is_onone());
+}
 
 /* One statement: dispatch on its kind. Anything not listed (KR_OTHER, the
  * tensor-core and TMA kinds, expressions, data nodes) is E020 by name. */
