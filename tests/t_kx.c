@@ -735,3 +735,60 @@ static void kx20(void)
     PASS();
 }
 TH_REG("kx", 20, "decode is a bijection over range(N) for 60 random extent lists and launches", kx20)
+
+/* ---- Vector alignment (T032) ---- */
+
+/* mm_vec on an index list text against extents dim[0..rank-1]; -1 on a load error. */
+static int kx_vec(uint32_t rank, const int32_t *dim, const char *idx, uint32_t w)
+{
+    const kir_val_t *lst = kx_lst(rank, dim, idx);
+
+    return lst ? mm_vec(dim, rank, lst, w) : -1;
+}
+
+/* The task brief says kx20.. but kx14 to kx20 were taken by the decode and
+ * mm_flat fixtures, so the alignment fixtures start at kx21. */
+static void kx21(void)
+{
+    static const int32_t d[1] = {64};
+
+    CHEQ(kx_vec(1, d, BIN("+", BIN("*", VAR("a0"), LIT(2)), LIT(0)), 2), 1);      /* p01 */
+    CHEQ(kx_vec(1, d, BIN("+", BIN("*", VAR("a0"), LIT(4)), LIT(0)), 4), 1);
+    CHEQ(kx_vec(1, d, BIN("+", BIN("*", VAR("a0"), LIT(4)), LIT(8)), 4), 1);      /* p02 style */
+    CHEQ(kx_vec(1, d, BIN("+", BIN("*", VAR("a0"), LIT(4)), LIT(8)), 2), 1);      /* 4 and 8 divide by 2 */
+    CHEQ(kx_vec(1, d, LIT(4), 4), 1);
+    CHEQ(kx_vec(1, d, LIT(0), 2), 1);
+    PASS();
+}
+TH_REG("kx", 21, "a vector access is proven for (a0 * 2) + 0, (a0 * 4) + k and constant multiples", kx21)
+
+static void kx22(void)
+{
+    static const int32_t d[1] = {64};
+
+    CHEQ(kx_vec(1, d, BIN("+", BIN("*", VAR("a0"), LIT(2)), LIT(1)), 2), 0);      /* odd constant */
+    CHEQ(kx_vec(1, d, BIN("+", BIN("*", VAR("a0"), LIT(2)), LIT(0)), 4), 0);      /* coef 2, width 4 */
+    CHEQ(kx_vec(1, d, VAR("a0"), 2), 0);
+    CHEQ(kx_vec(1, d, BIN("+", BIN("*", VAR("a0"), LIT(4)), LIT(2)), 4), 0);
+    CHEQ(kx_vec(1, d, LIT(3), 2), 0);
+    CHEQ(kx_vec(1, d, VAR("a0"), 3), 0);                                          /* only 2 and 4 */
+    CHEQ(kx_vec(1, d, VAR("a0"), 1), 0);
+    PASS();
+}
+TH_REG("kx", 22, "a misaligned coefficient or constant, or a width other than 2 or 4, stays scalar", kx22)
+
+static void kx23(void)
+{
+    static const int32_t d[1] = {64}, m[2] = {4, 6};
+
+    CHEQ(kx_vec(1, d, BIN("/", VAR("a0"), LIT(4)), 4), 0);
+    CHEQ(kx_vec(1, d, BIN("%", VAR("a0"), LIT(4)), 4), 0);
+    CHEQ(kx_vec(1, d, BIN("*", VAR("a0"), VAR("a1")), 2), 0);
+    /* Rank 2: strides {6, 1}. a0 * 6 is divisible by 2 but not by 4; a1 * 1 never. */
+    CHEQ(kx_vec(2, m, VAR("a0") " " BIN("*", VAR("a1"), LIT(2)), 2), 1);
+    CHEQ(kx_vec(2, m, VAR("a0") " " BIN("*", VAR("a1"), LIT(2)), 4), 0);
+    CHEQ(kx_vec(2, m, VAR("a0") " " VAR("a1"), 2), 0);
+    CHEQ(kx_vec(2, m, VAR("a0") " " LIT(1), 2), 0);
+    PASS();
+}
+TH_REG("kx", 23, "a non-affine index stays scalar and the flat form multiplies the strides in", kx23)

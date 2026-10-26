@@ -72,3 +72,4 @@ irptx Changelog
   any pass-to-fail regression. Today every open problem is compile_error, as
   the compiler is still a stub (Bhuvan B, 2026-10-25)
 - `is_wrt` lowers Write to one `st.global.f32` per value (value i at index+i, offset folded into the immediate); the output must be an `out` parameter (E022), atomic and swizzle are E020. p00 to p03 now compile (Bhuvan B, 2026-10-26)
+- `mm_vec` proves a 2 or 4 wide access aligned (ruling M6: every per-dimension affine coefficient and constant, times its stride, divisible by the width); `is_load` and `is_wrt` use `.v2`/`.v4` then and N scalars otherwise, and refuse counts other than 1, 2 or 4 (E020). Vector stores copy values into a consecutive `%f` run unless they already are one. p00 to p03 now store with `st.global.v2/v4.f32`; ptxas accepts them for sm_89 and sm_120 (Bhuvan B, 2026-10-26)

@@ -379,6 +379,31 @@ int mm_gflat(uint32_t arg, const kir_val_t *idx, nv_opnd_t *out)
     return mm_flat(S.arg[arg].dim, S.arg[arg].rank, idx, out);
 }
 
+/* 1 when a width-`w` (2 or 4) vector access at the flat index of `idx` is
+ * provably aligned (ruling M6): every per-dimension index is affine and its
+ * coefficients and constant, times that dimension's stride, are all divisible
+ * by `w`. Each term then is, so the sum is, for any value of the variables.
+ * The base is 16-byte aligned (cudaMalloc, and shared arrays are placed at
+ * max(align, 16)). Silent: 0 means "use scalars", never an error. Call it
+ * after mm_flat accepted the same arguments. */
+int mm_vec(const int32_t *dim, uint32_t rank, const kir_val_t *idx, uint32_t w)
+{
+    int64_t st[IR_MAX_DIM];
+    kx_aff_t a;
+    uint32_t k, j;
+
+    if (w != 2u && w != 4u) return 0;
+    if (!idx || idx->tag != KV_LIST || idx->n != rank || rank > IR_MAX_DIM) return 0;
+    if (mm_strides(dim, rank, st)) return 0;
+    for (k = 0; k < rank; k++) {
+        if (!kx_aff(kr_kid(idx, k), &a)) return 0;
+        if (a.cst * st[k] % (int64_t)w != 0) return 0;
+        for (j = 0; j < a.nvar; j++)
+            if (a.coef[j] * st[k] % (int64_t)w != 0) return 0;
+    }
+    return 1;
+}
+
 /* Byte offset of element `flat` as an s32 immediate, or E059. */
 static int mm_bytes(int32_t flat, int32_t *out)
 {
@@ -832,40 +857,60 @@ static int is_nyet(const kir_node_t *nd)
  * Each stub refuses with E020 naming its kind. A task replaces its stub with
  * the real lowering and keeps the signature (see "The walk" in isel.h). */
 
-/* Load(names, input, index, dtype): one scalar `ld.global.f32` from a kernel
- * parameter (a global input or a constant buffer, both just params) into a
- * fresh %f register bound to the name. A constant index folds into the
- * address: [%rd+imm], no instruction. Everything is checked before the first
- * record, so a refusal leaves no half-made load. Not lowered here: dtype
- * other than f32 (E024; `none` is the inherited f32, ruling C2), a load of
- * 2 or 4 names (T032 makes those .v2/.v4; guessing consecutive-element
- * scalar loads now would bake in a layout nobody has checked: E020), and an
- * input that is not a parameter (E022; T040 adds Smem). */
+/* Load(names, input, index, dtype): `ld.global.f32` from a kernel parameter
+ * (a global input or a constant buffer, both just params) into fresh %f
+ * registers bound to the names; name i is element index+i (the KIR's
+ * consecutive layout). One name is one scalar load; 2 or 4 names are one
+ * `.v2`/`.v4` load into consecutive %f registers when mm_vec proves the
+ * access aligned (M6), else that many scalar loads off one address. Any other
+ * count is E020. A constant index folds into the address: [%rd+imm], no
+ * instruction. Everything is checked before the first record, so a refusal
+ * leaves no half-made load. Not lowered here: dtype other than f32 (E024;
+ * `none` is the inherited f32, ruling C2) and an input that is not a
+ * parameter (E022; T040 adds Smem). */
+#define IS_MAX_VEC 4u
+
 static int is_load(is_wk_t *w, const kir_node_t *nd)
 {
     const kir_val_t *nms = kr_fld(nd, "names"), *in = kr_fld(nd, "input");
     const kir_val_t *idx = kr_fld(nd, "index"), *dt = kr_fld(nd, "dtype");
     const kir_val_t *nm;
-    uint32_t arg;
+    uint32_t arg, i, n;
     int32_t boff;
-    nv_opnd_t flat, areg, dst;
+    nv_opnd_t flat, areg, dst[IS_MAX_VEC];
 
     (void)w;
     if (!nms || !in || !idx || !dt) return er_fail(E015, "a Load missing names, input, index or dtype");
     if (nms->tag != KV_LIST || nms->n == 0) return er_fail(E015, "a Load whose names are not a non-empty list");
     if (in->tag != KV_STR) return er_fail(E015, "a Load whose input is not a name");
-    nm = kr_kid(nms, 0);
-    if (!nm || nm->tag != KV_STR) return er_fail(E015, "a Load name that is not a string");
+    n = nms->n;
+    for (i = 0; i < n && i < IS_MAX_VEC; i++) {
+        nm = kr_kid(nms, i);
+        if (!nm || nm->tag != KV_STR) return er_fail(E015, "a Load name that is not a string");
+    }
     if (dt->tag != KV_NONE && !(dt->tag == KV_DT && strcmp(kr_str(dt->ref), "f32") == 0))
         return er_fail(E024, "a Load whose dtype is not f32");
-    if (nms->n != 1) return er_fail(E020, "a Load of several values");
+    if (n != 1u && n != 2u && n != 4u) return er_fail(E020, "a Load of a number of values other than 1, 2 or 4");
     if (mm_arg(in->ref, &arg)) return 1;
     if (S.arg[arg].kind == KA_OUT) return er_fail(E022, "a Load from an output buffer");
     if (mm_gflat(arg, idx, &flat) || mm_gaddr(arg, flat, &areg, &boff)) return 1;
-    if (rg_new(RF_F, &dst)) return 1;
-    if (is_ins(NV_LD_GLOBAL_F32, dst, areg, boff ? is_oimm(boff) : is_onone(), is_onone())) return 1;
-    if (is_cmt(nm->ref)) return 1;
-    return is_bset(nm->ref, dst);
+    if (boff > INT32_MAX - 4 * (int32_t)IS_MAX_VEC) return er_fail(E059, "a Load offset out of range");
+    for (i = 0; i < n; i++)
+        if (rg_new(RF_F, &dst[i])) return 1;     /* consecutive: nothing else allocates here */
+    if (n > 1u && mm_vec(S.arg[arg].dim, S.arg[arg].rank, idx, n)) {
+        if (is_ins(n == 2u ? NV_LD_GLOBAL_V2_F32 : NV_LD_GLOBAL_V4_F32, dst[0], areg,
+                   boff ? is_oimm(boff) : is_onone(), is_onone())) return 1;
+    } else {
+        for (i = 0; i < n; i++) {
+            int32_t o = boff + 4 * (int32_t)i;
+            if (is_ins(NV_LD_GLOBAL_F32, dst[i], areg, o ? is_oimm(o) : is_onone(), is_onone())) return 1;
+        }
+    }
+    for (i = 0; i < n; i++) {
+        nm = kr_kid(nms, i);
+        if (is_cmt(nm->ref) || is_bset(nm->ref, dst[i])) return 1;
+    }
+    return 0;
 }
 
 /* ---- Arithmetic ---- */
@@ -911,24 +956,27 @@ static int is_asgn(is_wk_t *w, const kir_node_t *nd)
     if (op_emit(o, dst, x, y)) return 1;
     return is_bset(nm->ref, dst);
 }
-/* Write(output, index, values, value_dtype, atomic, swizzle): one scalar
- * `st.global.f32 [addr+imm], %f` per value, value i at element index+i (the
- * KIR's consecutive layout; T032 fuses these into .v2/.v4). The address is
+/* Write(output, index, values, value_dtype, atomic, swizzle): value i goes
+ * to element index+i (the KIR's consecutive layout). One value is one
+ * `st.global.f32`; 2 or 4 values are one `st.global.v2/v4.f32` when mm_vec
+ * proves the access aligned (M6), else that many scalar stores. The vector
+ * form needs its values in consecutive %f registers, so unless they already
+ * are, each is copied (`mov.f32`) into a fresh run first. The address is
  * computed once and the per-value offset folds into the immediate. The
  * output must be an `out` parameter (E022). Every check and every value
  * name lookup comes before the first record. Refused: atomic (E020; T071
- * lowers red.global.add), a swizzle other than NONE (E020), a value_dtype
- * other than f32 or none (E024). */
-#define IS_MAX_WRT 64u
-
+ * lowers red.global.add), a swizzle other than NONE (E020), a value count
+ * other than 1, 2 or 4 (E020, the simulator's rule), a value_dtype other
+ * than f32 or none (E024). */
 static int is_wrt(is_wk_t *w, const kir_node_t *nd)
 {
     const kir_val_t *out = kr_fld(nd, "output"), *idx = kr_fld(nd, "index");
     const kir_val_t *vs = kr_fld(nd, "values"), *dt = kr_fld(nd, "value_dtype");
     const kir_val_t *at = kr_fld(nd, "atomic"), *sw = kr_fld(nd, "swizzle");
-    nv_opnd_t val[IS_MAX_WRT], flat, areg;
-    uint32_t arg, i;
+    nv_opnd_t val[IS_MAX_VEC], run[IS_MAX_VEC], flat, areg;
+    uint32_t arg, i, n;
     int32_t boff;
+    int vec, seq;
 
     (void)w;
     if (!out || !idx || !vs || !dt) return er_fail(E015, "a Write missing output, index, values or value_dtype");
@@ -939,21 +987,38 @@ static int is_wrt(is_wk_t *w, const kir_node_t *nd)
     if (at && at->tag == KV_BOOL && at->i) return er_fail(E020, "an atomic Write");
     if (sw && sw->tag == KV_STR && strcmp(kr_str(sw->ref), "NONE") != 0)
         return er_fail(E020, "a Write with a swizzle");
-    if (vs->n > IS_MAX_WRT) return er_fail(E020, "a Write of too many values");
+    n = vs->n;
+    if (n != 1u && n != 2u && n != 4u) return er_fail(E020, "a Write of a number of values other than 1, 2 or 4");
     if (mm_arg(out->ref, &arg)) return 1;
     if (S.arg[arg].kind != KA_OUT) return er_fail(E022, "a Write to a buffer that is not an output");
-    for (i = 0; i < vs->n; i++) {
+    for (i = 0; i < n; i++) {
         const kir_val_t *v = kr_kid(vs, i);
         if (!v || v->tag != KV_STR) return er_fail(E015, "a Write value that is not a name");
         if (is_find(v->ref, &val[i])) return 1;
     }
     if (mm_gflat(arg, idx, &flat) || mm_gaddr(arg, flat, &areg, &boff)) return 1;
-    if (boff > INT32_MAX - 4 * (int32_t)IS_MAX_WRT) return er_fail(E059, "a Write offset out of range");
-    for (i = 0; i < vs->n; i++) {
-        int32_t o = boff + 4 * (int32_t)i;
-        if (is_ins(NV_ST_GLOBAL_F32, is_onone(), areg, o ? is_oimm(o) : is_onone(), val[i])) return 1;
+    if (boff > INT32_MAX - 4 * (int32_t)IS_MAX_VEC) return er_fail(E059, "a Write offset out of range");
+    vec = n > 1u && mm_vec(S.arg[arg].dim, S.arg[arg].rank, idx, n);
+    if (!vec) {
+        for (i = 0; i < n; i++) {
+            int32_t o = boff + 4 * (int32_t)i;
+            if (is_ins(NV_ST_GLOBAL_F32, is_onone(), areg, o ? is_oimm(o) : is_onone(), val[i])) return 1;
+        }
+        return 0;
     }
-    return 0;
+    seq = 1;
+    for (i = 0; i < n; i++)
+        seq = seq && val[i].kind == OP_REG && val[i].rf == RF_F && val[i].v == val[0].v + i;
+    if (seq) {
+        run[0] = val[0];
+    } else {
+        for (i = 0; i < n; i++) {
+            if (rg_new(RF_F, &run[i])) return 1;
+            if (is_ins(NV_MOV_F32, run[i], val[i], is_onone(), is_onone())) return 1;
+        }
+    }
+    return is_ins(n == 2u ? NV_ST_GLOBAL_V2_F32 : NV_ST_GLOBAL_V4_F32, is_onone(), areg,
+                  boff ? is_oimm(boff) : is_onone(), run[0]);
 }
 static int is_acc(is_wk_t *w, const kir_node_t *nd)   { (void)w; return is_nyet(nd); }
 static int is_cond(is_wk_t *w, const kir_node_t *nd)  { (void)w; return is_nyet(nd); }

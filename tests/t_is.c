@@ -144,12 +144,12 @@ TH_REG("is", 7, "a Load with a non-f32 dtype is refused E024", is07)
 
 static void is08(void)
 {
-    CHEQ(is_go(XIN, "(Load names=[\"p\" \"q\"] input=\"x0\" index=[" A0 "] dtype=dt:f32)"), 1);
-    CHECK(strncmp(ie, "error[E020]", 11) == 0);
-    CHEQ(is_cnt(NV_LD_GLOBAL_F32), 0u);
+    CHEQ(is_go(XIN, "(Load names=[\"p\" \"q\"] input=\"x0\" index=[" A0 "] dtype=dt:f32)"), 0);
+    CHEQ(is_cnt(NV_LD_GLOBAL_F32), 2u);     /* index a0 is not provably aligned: two scalars */
+    CHEQ(is_cnt(NV_LD_GLOBAL_V2_F32), 0u);
     PASS();
 }
-TH_REG("is", 8, "a Load of two names is refused E020 until the vector loads land", is08)
+TH_REG("is", 8, "a Load of two names at an unprovable index is two scalar loads", is08)
 
 static void is09(void)
 {
@@ -330,3 +330,86 @@ static void is21(void)
     PASS();
 }
 TH_REG("is", 21, "an atomic or swizzled Write is refused E020", is21)
+
+/* ---- Vector accesses (T032; is08 now covers the scalar fallback) ---- */
+
+#define XIN16 "arg 0 x0 in f32 1 64\narg 1 y out f32 1 64\n"
+#define A2 "(BinaryExpr op=\"*\" left=" A0 " right=" LIT(2) ")"
+#define A4 "(BinaryExpr op=\"*\" left=" A0 " right=" LIT(4) ")"
+#define A2P1 "(BinaryExpr op=\"+\" left=" A2 " right=" LIT(1) ")"
+#define LD2(i) "(Load names=[\"p\" \"q\"] input=\"x0\" index=[" i "] dtype=dt:f32)"
+#define LD4(i) "(Load names=[\"p\" \"q\" \"r\" \"s\"] input=\"x0\" index=[" i "] dtype=dt:f32)"
+
+static void is22(void)
+{
+    const nv_ins_t *l;
+
+    CHEQ(is_go(XIN16, LD2(A2) WR("y", A0, "\"p\"", WOK)), 0);
+    l = is_nth(NV_LD_GLOBAL_V2_F32, 0);
+    CHECK(l && l->dst.kind == OP_REG && l->dst.rf == RF_F);
+    CHEQ(is_cnt(NV_LD_GLOBAL_V2_F32), 1u);
+    CHEQ(is_cnt(NV_LD_GLOBAL_F32), 0u);
+    CHEQ(is_cnt(NV_LD_GLOBAL_V4_F32), 0u);
+    CHECK(l->src[0].kind == OP_REG && l->src[0].rf == RF_RD);
+    CHEQ(is_go(XIN16, LD4(A4) WR("y", A0, "\"s\"", WOK)), 0);
+    l = is_nth(NV_LD_GLOBAL_V4_F32, 0);
+    CHECK(l);
+    CHEQ(is_cnt(NV_LD_GLOBAL_F32), 0u);
+    PASS();
+}
+TH_REG("is", 22, "a Load of 2 or 4 names at an aligned index is one ld.global.v2/v4.f32", is22)
+
+static void is23(void)
+{
+    const nv_ins_t *s0, *s1;
+
+    CHEQ(is_go(XIN16, LD2(A2P1) WR("y", A0, "\"p\"", WOK)), 0);        /* a0 * 2 + 1: misaligned */
+    CHEQ(is_cnt(NV_LD_GLOBAL_V2_F32), 0u);
+    CHEQ(is_cnt(NV_LD_GLOBAL_F32), 2u);
+    s0 = is_nld(0);
+    s1 = is_nld(1);
+    CHECK(s0 && s1 && s1->dst.v == s0->dst.v + 1u);
+    CHECK(s0->src[1].kind == OP_NONE && s1->src[1].kind == OP_IMM && s1->src[1].v == 4);
+    CHEQ(is_go(XIN16, LD2(A0) WR("y", A0, "\"p\"", WOK)), 0);          /* index a0: misaligned */
+    CHEQ(is_cnt(NV_LD_GLOBAL_V2_F32), 0u);
+    CHEQ(is_cnt(NV_LD_GLOBAL_F32), 2u);
+    CHEQ(is_go(XIN16, "(Load names=[\"p\" \"q\" \"r\"] input=\"x0\" index=[" A0 "] dtype=dt:f32)"), 1);
+    CHECK(strncmp(ie, "error[E020]", 11) == 0);                         /* 3 names: refused */
+    PASS();
+}
+TH_REG("is", 23, "a misaligned or non-affine Load of 2 names is two scalar loads; 3 names is E020", is23)
+
+static void is24(void)
+{
+    const nv_ins_t *s;
+
+    /* Loaded run is already consecutive: no mov, one st.v4. */
+    CHEQ(is_go(XIN16, LD4(A4) WR("y", A4, "\"p\" \"q\" \"r\" \"s\"", WOK)), 0);
+    s = is_nth(NV_ST_GLOBAL_V4_F32, 0);
+    CHECK(s && s->dst.kind == OP_NONE && s->src[2].kind == OP_REG && s->src[2].rf == RF_F);
+    CHECK(s->src[2].v == is_nth(NV_LD_GLOBAL_V4_F32, 0)->dst.v);
+    CHEQ(is_cnt(NV_MOV_F32), 0u);
+    CHEQ(is_cnt(NV_ST_GLOBAL_F32), 0u);
+    /* Values out of order: copied into a fresh run first. */
+    CHEQ(is_go(XIN16, LD2(A2) WR("y", A2, "\"q\" \"p\"", WOK)), 0);
+    CHEQ(is_cnt(NV_ST_GLOBAL_V2_F32), 1u);
+    CHEQ(is_cnt(NV_MOV_F32), 2u);
+    s = is_nth(NV_ST_GLOBAL_V2_F32, 0);
+    CHECK(s && s->src[2].v == is_nth(NV_MOV_F32, 0)->dst.v);
+    CHECK(is_nth(NV_MOV_F32, 1)->dst.v == s->src[2].v + 1u);
+    PASS();
+}
+TH_REG("is", 24, "a Write of 4 or 2 aligned values is one st.global.v4/v2.f32 over a consecutive run", is24)
+
+static void is25(void)
+{
+    CHEQ(is_go(XIN16, LD2(A2) WR("y", A2P1, "\"p\" \"q\"", WOK)), 0);
+    CHEQ(is_cnt(NV_ST_GLOBAL_V2_F32), 0u);
+    CHEQ(is_cnt(NV_ST_GLOBAL_F32), 2u);
+    CHEQ(is_cnt(NV_MOV_F32), 0u);
+    CHEQ(is_go(XIN16, LDS WR("y", A0, "\"p\" \"q\" \"p\"", WOK)), 1);
+    CHECK(strncmp(ie, "error[E020]", 11) == 0);
+    CHEQ(is_cnt(NV_ST_GLOBAL_F32), 0u);
+    PASS();
+}
+TH_REG("is", 25, "a misaligned Write of 2 values is two scalar stores; 3 values is E020", is25)

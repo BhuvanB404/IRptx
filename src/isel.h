@@ -94,6 +94,12 @@ int mm_flat(const int32_t *dim, uint32_t rank, const kir_val_t *idx, nv_opnd_t *
 /* mm_flat against the dims of parameter `arg`. */
 int mm_gflat(uint32_t arg, const kir_val_t *idx, nv_opnd_t *out);
 
+/* 1 when a width-w (2 or 4) vector access at the flat index of `idx` is
+ * provably aligned (ruling M6: all per-dimension affine coefficients and
+ * constants, times the strides, divisible by w; base 16-aligned), else 0
+ * (not affine, misaligned, or w not 2 or 4). Silent. Call after mm_flat. */
+int mm_vec(const int32_t *dim, uint32_t rank, const kir_val_t *idx, uint32_t w);
+
 /* Address of f32 element `flat` (OP_IMM or an s32 register) of parameter
  * `arg`, as register *areg (RF_RD) plus constant byte offset *boff, ready
  * for `[%rd+boff]`. A constant flat index emits nothing: *areg is the
