@@ -1,9 +1,9 @@
 {
-  "commit": "c4155b0d321bb63354d8cdfdfef4696daa268456",
-  "timestamp": "2026-10-26T09:45:10+05:30",
+  "commit": "ca588561acf778ad077f6740bed04222ca08bc15",
+  "timestamp": "2026-10-26T09:54:00+05:30",
   "summary": {
     "1": [
-      1,
+      4,
       4
     ],
     "2": [
@@ -93,35 +93,35 @@
       "set": "open",
       "status": "pass",
       "detail": "",
-      "median_us": 22.37,
-      "compile_s": 0.19
+      "median_us": 23.14,
+      "compile_s": 0.22
     },
     {
       "problem": "p01_vector_add",
       "category": 1,
       "set": "open",
-      "status": "compile_error",
-      "detail": "that is not PTX: it is empty",
-      "median_us": null,
-      "compile_s": 0.01
+      "status": "pass",
+      "detail": "",
+      "median_us": 23.42,
+      "compile_s": 0.2
     },
     {
       "problem": "p02_scale_shift",
       "category": 1,
       "set": "open",
-      "status": "compile_error",
-      "detail": "that is not PTX: it is empty",
-      "median_us": null,
-      "compile_s": 0.01
+      "status": "pass",
+      "detail": "",
+      "median_us": 16.16,
+      "compile_s": 0.21
     },
     {
       "problem": "p03_relu_mul",
       "category": 1,
       "set": "open",
-      "status": "compile_error",
-      "detail": "that is not PTX: it is empty",
-      "median_us": null,
-      "compile_s": 0.01
+      "status": "pass",
+      "detail": "",
+      "median_us": 16.22,
+      "compile_s": 0.21
     },
     {
       "problem": "r01_array_sum",
