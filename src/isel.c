@@ -911,7 +911,50 @@ static int is_asgn(is_wk_t *w, const kir_node_t *nd)
     if (op_emit(o, dst, x, y)) return 1;
     return is_bset(nm->ref, dst);
 }
-static int is_wrt(is_wk_t *w, const kir_node_t *nd)   { (void)w; return is_nyet(nd); }
+/* Write(output, index, values, value_dtype, atomic, swizzle): one scalar
+ * `st.global.f32 [addr+imm], %f` per value, value i at element index+i (the
+ * KIR's consecutive layout; T032 fuses these into .v2/.v4). The address is
+ * computed once and the per-value offset folds into the immediate. The
+ * output must be an `out` parameter (E022). Every check and every value
+ * name lookup comes before the first record. Refused: atomic (E020; T071
+ * lowers red.global.add), a swizzle other than NONE (E020), a value_dtype
+ * other than f32 or none (E024). */
+#define IS_MAX_WRT 64u
+
+static int is_wrt(is_wk_t *w, const kir_node_t *nd)
+{
+    const kir_val_t *out = kr_fld(nd, "output"), *idx = kr_fld(nd, "index");
+    const kir_val_t *vs = kr_fld(nd, "values"), *dt = kr_fld(nd, "value_dtype");
+    const kir_val_t *at = kr_fld(nd, "atomic"), *sw = kr_fld(nd, "swizzle");
+    nv_opnd_t val[IS_MAX_WRT], flat, areg;
+    uint32_t arg, i;
+    int32_t boff;
+
+    (void)w;
+    if (!out || !idx || !vs || !dt) return er_fail(E015, "a Write missing output, index, values or value_dtype");
+    if (out->tag != KV_STR) return er_fail(E015, "a Write whose output is not a name");
+    if (vs->tag != KV_LIST || vs->n == 0) return er_fail(E015, "a Write whose values are not a non-empty list");
+    if (dt->tag != KV_NONE && !(dt->tag == KV_DT && strcmp(kr_str(dt->ref), "f32") == 0))
+        return er_fail(E024, "a Write whose value_dtype is not f32");
+    if (at && at->tag == KV_BOOL && at->i) return er_fail(E020, "an atomic Write");
+    if (sw && sw->tag == KV_STR && strcmp(kr_str(sw->ref), "NONE") != 0)
+        return er_fail(E020, "a Write with a swizzle");
+    if (vs->n > IS_MAX_WRT) return er_fail(E020, "a Write of too many values");
+    if (mm_arg(out->ref, &arg)) return 1;
+    if (S.arg[arg].kind != KA_OUT) return er_fail(E022, "a Write to a buffer that is not an output");
+    for (i = 0; i < vs->n; i++) {
+        const kir_val_t *v = kr_kid(vs, i);
+        if (!v || v->tag != KV_STR) return er_fail(E015, "a Write value that is not a name");
+        if (is_find(v->ref, &val[i])) return 1;
+    }
+    if (mm_gflat(arg, idx, &flat) || mm_gaddr(arg, flat, &areg, &boff)) return 1;
+    if (boff > INT32_MAX - 4 * (int32_t)IS_MAX_WRT) return er_fail(E059, "a Write offset out of range");
+    for (i = 0; i < vs->n; i++) {
+        int32_t o = boff + 4 * (int32_t)i;
+        if (is_ins(NV_ST_GLOBAL_F32, is_onone(), areg, o ? is_oimm(o) : is_onone(), val[i])) return 1;
+    }
+    return 0;
+}
 static int is_acc(is_wk_t *w, const kir_node_t *nd)   { (void)w; return is_nyet(nd); }
 static int is_cond(is_wk_t *w, const kir_node_t *nd)  { (void)w; return is_nyet(nd); }
 static int is_sloop(is_wk_t *w, const kir_node_t *nd) { (void)w; return is_nyet(nd); }

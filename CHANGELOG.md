@@ -71,3 +71,4 @@ irptx Changelog
   or run_error per problem in `results/sweep.json`, and `--compare` exits 1 on
   any pass-to-fail regression. Today every open problem is compile_error, as
   the compiler is still a stub (Bhuvan B, 2026-10-25)
+- `is_wrt` lowers Write to one `st.global.f32` per value (value i at index+i, offset folded into the immediate); the output must be an `out` parameter (E022), atomic and swizzle are E020. p00 to p03 now compile (Bhuvan B, 2026-10-26)

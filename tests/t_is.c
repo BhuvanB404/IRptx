@@ -251,3 +251,82 @@ static void is16(void)
     PASS();
 }
 TH_REG("is", 16, "an Assign result is bound so a later Assign reads it", is16)
+
+/* ---- Write (T030) ---- */
+
+#define WR(out, idx, vals, extra) "(Write output=\"" out "\" index=[" idx "] values=[" vals "] value_dtype=dt:f32 " extra ")"
+#define WOK "atomic=false swizzle=\"NONE\""
+
+static const nv_ins_t *is_nst(uint32_t n)
+{
+    uint32_t cnt, i;
+    const nv_ins_t *r = is_recs(&cnt);
+
+    for (i = 0; i < cnt; i++)
+        if (r[i].op == NV_ST_GLOBAL_F32 && n-- == 0) return &r[i];
+    return NULL;
+}
+
+static void is17(void)
+{
+    const nv_ins_t *s, *l;
+
+    CHEQ(is_go(XIN, LD("p", A0, "dt:f32") WR("y", A0, "\"p\"", WOK)), 0);
+    s = is_nst(0);
+    l = is_nld(0);
+    CHECK(s && l);
+    CHECK(s->dst.kind == OP_NONE);
+    CHECK(s->src[0].kind == OP_REG && s->src[0].rf == RF_RD);
+    CHEQ(s->src[1].kind, OP_NONE);
+    CHECK(s->src[2].kind == OP_REG && s->src[2].rf == RF_F && s->src[2].v == l->dst.v);
+    CHEQ(is_cnt(NV_ST_GLOBAL_F32), 1u);
+    PASS();
+}
+TH_REG("is", 17, "a Write is one st.global.f32 [%rd], %f with the value register", is17)
+
+static void is18(void)
+{
+    const nv_ins_t *s;
+
+    CHEQ(is_go(XIN, LDS WR("y", LIT(3), "\"p\" \"q\"", WOK)), 0);
+    CHEQ(is_cnt(NV_ST_GLOBAL_F32), 2u);
+    s = is_nst(0);
+    CHECK(s && s->src[1].kind == OP_IMM && s->src[1].v == 12);
+    s = is_nst(1);
+    CHECK(s && s->src[1].kind == OP_IMM && s->src[1].v == 16);
+    PASS();
+}
+TH_REG("is", 18, "a constant-index Write folds into [base+imm], value i at +4*i", is18)
+
+static void is19(void)
+{
+    CHEQ(is_go(XIN, LDS WR("nope", A0, "\"p\"", WOK)), 1);
+    CHECK(strncmp(ie, "error[E022]", 11) == 0);
+    CHEQ(is_cnt(NV_ST_GLOBAL_F32), 0u);
+    CHEQ(is_go(XIN, LDS WR("x0", A0, "\"p\"", WOK)), 1);
+    CHECK(strncmp(ie, "error[E022]", 11) == 0);
+    CHEQ(is_cnt(NV_ST_GLOBAL_F32), 0u);
+    PASS();
+}
+TH_REG("is", 19, "a Write to an unknown or non-output buffer is refused E022, nothing stored", is19)
+
+static void is20(void)
+{
+    CHEQ(is_go(XIN, LDS WR("y", A0, "\"p\" \"zz\"", WOK)), 1);
+    CHECK(strncmp(ie, "error[E022]", 11) == 0);
+    CHECK(strstr(ie, "zz") != NULL);
+    CHEQ(is_cnt(NV_ST_GLOBAL_F32), 0u);
+    PASS();
+}
+TH_REG("is", 20, "a Write of an unbound value is refused E022 with no partial store", is20)
+
+static void is21(void)
+{
+    CHEQ(is_go(XIN, LDS WR("y", A0, "\"p\"", "atomic=true swizzle=\"NONE\"")), 1);
+    CHECK(strncmp(ie, "error[E020]", 11) == 0);
+    CHEQ(is_go(XIN, LDS WR("y", A0, "\"p\"", "atomic=false swizzle=\"B128\"")), 1);
+    CHECK(strncmp(ie, "error[E020]", 11) == 0);
+    CHEQ(is_cnt(NV_ST_GLOBAL_F32), 0u);
+    PASS();
+}
+TH_REG("is", 21, "an atomic or swizzled Write is refused E020", is21)
