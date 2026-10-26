@@ -28,7 +28,12 @@ static const op_exp_t OP_EXP[] = {
     {"add", OPN_ADD, 2}, {"subtract", OPN_SUBTRACT, 2}, {"multiply", OPN_MULTIPLY, 2},
     {"divide", OPN_DIVIDE, 2}, {"true_divide", OPN_TRUE_DIVIDE, 2},
     {"maximum", OPN_MAXIMUM, 2}, {"minimum", OPN_MINIMUM, 2},
-    {"relu", OPN_RELU, 1}, {"copy", OPN_COPY, 1}, {"negative", OPN_NEGATIVE, 1}, {"abs", OPN_ABS, 1}
+    {"relu", OPN_RELU, 1}, {"copy", OPN_COPY, 1}, {"negative", OPN_NEGATIVE, 1}, {"abs", OPN_ABS, 1},
+    {"sqrt", OPN_SQRT, 1}, {"rsqrt", OPN_RSQRT, 1}, {"reciprocal", OPN_RECIPROCAL, 1},
+    {"tanh", OPN_TANH, 1}, {"sin", OPN_SIN, 1}, {"cos", OPN_COS, 1}, {"log2", OPN_LOG2, 1},
+    {"exp", OPN_EXP, 1}, {"exp_fast", OPN_EXP_FAST, 1}, {"log", OPN_LOG, 1},
+    {"sigmoid", OPN_SIGMOID, 1}, {"silu", OPN_SILU, 1}, {"softplus", OPN_SOFTPLUS, 1},
+    {"pow", OPN_POW, 2}
 };
 #define OP_NEXP (sizeof OP_EXP / sizeof OP_EXP[0])
 
@@ -195,3 +200,47 @@ static void op07(void)
     PASS();
 }
 TH_REG("op", 7, "op_emit refuses OPN_NONE with E000 and appends nothing", op07)
+
+/* A composite op is a sequence, and dst is written last so an accumulator's
+ * home register can be both the destination and an argument. */
+static void op08(void)
+{
+    nv_opnd_t d, a;
+    const nv_ins_t *r;
+    uint32_t n;
+
+    CHEQ(op_fresh(), 0);
+    CHEQ(rg_new(RF_F, &d), 0);
+    CHEQ(rg_new(RF_F, &a), 0);
+    CHEQ(op_emit(OPN_EXP, d, a, d), 0);
+    r = is_recs(&n);
+    CHEQ(n, 2u);
+    CHEQ(r[0].op, NV_MUL_RN_F32);
+    CHECK(r[0].src[1].kind == OP_FIMM && r[0].src[1].v == 0x3FB8AA3Bu);
+    CHEQ(r[1].op, NV_EX2_APPROX_F32);
+    CHECK(r[1].dst.v == d.v && r[1].src[0].v == r[0].dst.v);
+    PASS();
+}
+TH_REG("op", 8, "exp is mul by log2 e then ex2.approx, writing dst last", op08)
+
+static void op09(void)
+{
+    nv_opnd_t d, a;
+    const nv_ins_t *r;
+    uint32_t n;
+
+    CHEQ(op_fresh(), 0);
+    CHEQ(rg_new(RF_F, &d), 0);
+    CHEQ(rg_new(RF_F, &a), 0);
+    CHEQ(op_emit(OPN_SIGMOID, d, a, d), 0);
+    r = is_recs(&n);
+    CHEQ(n, 4u);
+    CHEQ(r[0].op, NV_MUL_RN_F32);
+    CHECK(r[0].src[1].kind == OP_FIMM && r[0].src[1].v == 0xBFB8AA3Bu);
+    CHEQ(r[1].op, NV_EX2_APPROX_F32);
+    CHEQ(r[2].op, NV_ADD_RN_F32);
+    CHEQ(r[3].op, NV_RCP_RN_F32);
+    CHECK(r[3].dst.v == d.v);
+    PASS();
+}
+TH_REG("op", 9, "sigmoid is exp(-x) by ex2, +1, then rcp, into dst", op09)

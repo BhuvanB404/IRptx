@@ -94,10 +94,26 @@ irptx Changelog
   1.526e-05, ptxas clean for sm_89 and sm_120: categories 1 and 2 are complete, the MVP
   (Bhuvan B, 2026-10-26)
 
+### Ops
+
+- the op table grows from 11 names to 25. `sqrt`, `rsqrt`, `reciprocal`, `tanh`, `sin`,
+  `cos` and `log2` are one record each; `exp`, `exp_fast`, `log`, `sigmoid`, `silu`,
+  `softplus` and `pow` are a short sequence written out from ex2 and lg2
+  (`exp(x) = ex2(x*log2e)`, `ln(x) = lg2(x)*ln2`, `sigmoid(x) = 1/(1+exp(-x))`), with `dst`
+  written last so an accumulator's home register can be both argument and destination.
+  `where`, `fma`, `gelu`, `gelu_tanh`, `erf` and `sign` stay out: the first two need a
+  three-argument op shape and the rest a float predicate or an opcode the record set does
+  not have (Bhuvan B, 2026-10-26)
+
+- `f01_rmsnorm` and `f03_l2norm` PASS with the new ops (max abs err 1.907e-06 and 1.490e-08),
+  so category 4 is 2 of 3 and the sweep is 10 of 15. `f02_row_softmax` needs the two coupled
+  softmax states (T060) (Bhuvan B, 2026-10-26)
+
 ### Tests
 
 - `is26` to `is35` cover the reduction shapes: the loop guard and back edge, the identity an
   Accum seeds, the refused op with no identity and the refused zero-free step, the Cond branch
   pair, a Write into a shared array that precedes its Smem statement, the barrier id, the
   shuffle ladder 16..1 with its two refusals, and the tree's barrier, broadcast and refusals.
-  142 C tests pass (Bhuvan B, 2026-10-26)
+  `op08` and `op09` pin the two composite shapes, exp's `mul` by log2 e then `ex2.approx` and
+  sigmoid's four records into `dst` (Bhuvan B, 2026-10-26)

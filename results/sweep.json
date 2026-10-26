@@ -1,6 +1,6 @@
 {
-  "commit": "655cb6129c13920a0425946911b4b85e2802d9c6",
-  "timestamp": "2026-10-26T18:47:11+05:30",
+  "commit": "77aeaa01442ae5ef805b7d2e69887ec5c0500a7e",
+  "timestamp": "2026-10-26T18:55:38+05:30",
   "summary": {
     "1": [
       4,
@@ -15,7 +15,7 @@
       2
     ],
     "4": [
-      0,
+      2,
       3
     ],
     "5": [
@@ -29,7 +29,7 @@
       "category": 5,
       "set": "open",
       "status": "compile_error",
-      "detail": "error[E021]: irptx: cannot lower the op 'reciprocal' is not in the op table",
+      "detail": "error[E020]: irptx: cannot lower a Loop statement",
       "median_us": null,
       "compile_s": 0.22
     },
@@ -38,7 +38,7 @@
       "category": 5,
       "set": "open",
       "status": "compile_error",
-      "detail": "error[E021]: irptx: cannot lower the op 'reciprocal' is not in the op table",
+      "detail": "error[E020]: irptx: cannot lower a Loop statement",
       "median_us": null,
       "compile_s": 0.23
     },
@@ -46,10 +46,10 @@
       "problem": "f01_rmsnorm",
       "category": 4,
       "set": "open",
-      "status": "compile_error",
-      "detail": "error[E021]: irptx: cannot lower the op 'reciprocal' is not in the op table",
-      "median_us": null,
-      "compile_s": 0.22
+      "status": "pass",
+      "detail": "",
+      "median_us": 17.02,
+      "compile_s": 0.23
     },
     {
       "problem": "f02_row_softmax",
@@ -58,16 +58,16 @@
       "status": "compile_error",
       "detail": "error[E022]: irptx: cannot lower name 'in0__acc1_sa' that is bound in no enclosing scope",
       "median_us": null,
-      "compile_s": 0.21
+      "compile_s": 0.23
     },
     {
       "problem": "f03_l2norm",
       "category": 4,
       "set": "open",
-      "status": "compile_error",
-      "detail": "error[E021]: irptx: cannot lower the op 'sqrt' is not in the op table",
-      "median_us": null,
-      "compile_s": 0.22
+      "status": "pass",
+      "detail": "",
+      "median_us": 17.47,
+      "compile_s": 0.26
     },
     {
       "problem": "m01_matmul_512",
@@ -85,7 +85,7 @@
       "status": "compile_error",
       "detail": "error[E020]: irptx: cannot lower a Init statement",
       "median_us": null,
-      "compile_s": 0.21
+      "compile_s": 0.23
     },
     {
       "problem": "p00_scalar_add",
@@ -93,8 +93,8 @@
       "set": "open",
       "status": "pass",
       "detail": "",
-      "median_us": 20.54,
-      "compile_s": 0.23
+      "median_us": 24.16,
+      "compile_s": 0.22
     },
     {
       "problem": "p01_vector_add",
@@ -102,8 +102,8 @@
       "set": "open",
       "status": "pass",
       "detail": "",
-      "median_us": 20.51,
-      "compile_s": 0.21
+      "median_us": 23.87,
+      "compile_s": 0.25
     },
     {
       "problem": "p02_scale_shift",
@@ -111,8 +111,8 @@
       "set": "open",
       "status": "pass",
       "detail": "",
-      "median_us": 15.14,
-      "compile_s": 0.23
+      "median_us": 16.83,
+      "compile_s": 0.25
     },
     {
       "problem": "p03_relu_mul",
@@ -120,8 +120,8 @@
       "set": "open",
       "status": "pass",
       "detail": "",
-      "median_us": 15.36,
-      "compile_s": 0.21
+      "median_us": 16.96,
+      "compile_s": 0.23
     },
     {
       "problem": "r01_array_sum",
@@ -129,7 +129,7 @@
       "set": "open",
       "status": "pass",
       "detail": "",
-      "median_us": 23.71,
+      "median_us": 23.94,
       "compile_s": 0.21
     },
     {
@@ -138,8 +138,8 @@
       "set": "open",
       "status": "pass",
       "detail": "",
-      "median_us": 41.18,
-      "compile_s": 0.26
+      "median_us": 41.57,
+      "compile_s": 0.21
     },
     {
       "problem": "r03_mean",
@@ -147,8 +147,8 @@
       "set": "open",
       "status": "pass",
       "detail": "",
-      "median_us": 32.35,
-      "compile_s": 0.24
+      "median_us": 31.68,
+      "compile_s": 0.21
     },
     {
       "problem": "r04_row_sum",
@@ -156,7 +156,7 @@
       "set": "open",
       "status": "pass",
       "detail": "",
-      "median_us": 24.45,
+      "median_us": 25.28,
       "compile_s": 0.21
     }
   ]

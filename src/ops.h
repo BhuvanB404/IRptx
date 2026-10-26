@@ -14,8 +14,12 @@
 
 typedef enum {
     OPN_NONE = 0,                   /* not found; also the "no reducing op" value */
+    /* one record each */
     OPN_ADD, OPN_SUBTRACT, OPN_MULTIPLY, OPN_DIVIDE, OPN_TRUE_DIVIDE,
     OPN_MAXIMUM, OPN_MINIMUM, OPN_RELU, OPN_COPY, OPN_NEGATIVE, OPN_ABS,
+    OPN_SQRT, OPN_RSQRT, OPN_RECIPROCAL, OPN_TANH, OPN_SIN, OPN_COS, OPN_LOG2,
+    /* a short sequence each (op_seq) */
+    OPN_EXP, OPN_EXP_FAST, OPN_LOG, OPN_SIGMOID, OPN_SILU, OPN_SOFTPLUS, OPN_POW,
     OPN_NCOUNT                      /* count, keep last */
 } opn_t;
 
@@ -31,8 +35,11 @@ uint32_t op_arity(opn_t op);
  * +1e30; never an infinity. */
 int op_ident(opn_t op, uint32_t *bits);
 
-/* Append the record for `dst = op(a)` or `dst = op(a, b)` (b is ignored by a
- * unary op). 0, E083 when the record list is full, E000 for OPN_NONE. */
+/* Append the records for `dst = op(a)` or `dst = op(a, b)` (b is ignored by a
+ * unary op). Most ops are one record; exp, log, sigmoid, silu, softplus and
+ * pow are a short sequence into fresh temporaries, with dst written last so a
+ * dst that aliases a or b (an accumulator's home register) is safe. 0, E083
+ * when the record list is full, E000 for OPN_NONE. */
 int op_emit(opn_t op, nv_opnd_t dst, nv_opnd_t a, nv_opnd_t b);
 
 #endif /* OPS_H */

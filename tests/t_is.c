@@ -212,9 +212,10 @@ TH_REG("is", 11, "a unary Assign reads one arg register", is11)
 
 static void is12(void)
 {
-    CHEQ(is_go(XIN, LDS ASG("v", "exp", "\"p\"", "dt:f32")), 1);
+    /* gelu needs erf, so it is deliberately not in the table (ops.h). */
+    CHEQ(is_go(XIN, LDS ASG("v", "gelu", "\"p\"", "dt:f32")), 1);
     CHECK(strncmp(ie, "error[E021]", 11) == 0);
-    CHECK(strstr(ie, "exp") != NULL);
+    CHECK(strstr(ie, "gelu") != NULL);
     PASS();
 }
 TH_REG("is", 12, "an op outside the table is refused E021 naming the op", is12)
