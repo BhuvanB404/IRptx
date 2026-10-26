@@ -1,7 +1,13 @@
 irptx Changelog
 ===============
 
-## Unreleased
+## irptx 0.1.0
+
+Ten of the fifteen open problems now pass on the runner: every pointwise kernel,
+every reduction, and two of the three fused ones. The compiler is a C99 core in
+it back out as text, so the whole lowering is in `src/` and a reviewer can read
+it without reading any Python. That reaches the hackathon's MVP bar (categories 1
+and 2) and a little past it. Everything below this line is what it took.
 
 ### Docs
 

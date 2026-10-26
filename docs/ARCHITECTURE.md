@@ -1,18 +1,185 @@
 # irptx architecture
 
-are written (task T008). T049 fills in the remaining sections.
+Status: written (T049). The "PTX idioms" section was written first, from the
+it stands at `irptx 0.1.0`.
 
-## Pipeline (to be filled by T049)
+## Pipeline
 
-kir (load and normalise the Kernel IR) -> isel (choose PTX forms, assign
-registers) -> verify (check the machine form before text exists) -> emit
-(print PTX text).
+```
+kernel.ir.json
+   |  compile.py + fe/kirdump.py   Emmy loads it; we write every field out
+   v
+KIR text (ASCII, one line per header field, one S-expression)
+   |  src/kir.c                     parse into fixed pools, no allocation
+   v
+kir_t (read-only)
+   |  src/isel.c                    statements -> records; kexpr.c indexes;
+   |                                ops.c elementwise ops
+   v
+nv_ins_t[] (the machine form, before any text exists)
+   |  src/verify.c                  labels, registers, barriers, ASCII, size
+   v
+   |  src/emit.c                    records -> text in one buffer
+   v
+PTX on stdout, or one `error[E0NN]` line on stderr and nothing on stdout
+```
 
-## Module map (to be filled by T049)
+The split exists because the hackathon allows Emmy to *deserialize* the IR but
+not to lower it: `Graph.from_dict` is required to read the classes, and
+`render_kernelop` plus `nvcc -ptx` would produce working PTX for any IR and is
+not eligible. So the Python side loads and serializes, and every decision is
+in C where a judge can read it. The KIR text is a generic walk of the
+dataclass fields in declaration order, so it loses nothing and decides
+nothing: if a `if` about PTX ever appears in `fe/`, it belongs in `isel.c`.
 
-## Data model (to be filled by T049)
+## Module map
 
-## Error codes (to be filled by T049)
+| File | What lives there |
+|---|---|
+| `compile.py` | the contract: `python compile.py <ir>`; finds the core, relays stdout, stderr and the exit code |
+| `fe/kirdump.py` | `fe_load`, `fe_meta`, `fe_bufs`, `fe_dump`: Emmy classes in, KIR text out |
+| `src/main.c` | read stdin or a file, run the stages, one `fwrite` when all succeed |
+| `src/kir.c` | the KIR reader: explicit stack, pools, byte offsets in refusals |
+| `src/kexpr.c` | `kx_eval`, `kx_fold`, `kx_aff`: index and predicate expressions, affine proofs |
+| `src/ops.c` | the elementwise table: names, arity, identities, `op_emit` |
+| `src/isel.c` | one `is_*` per statement kind, `mm_*` for memory, `sm_*` for shared, `rg_*` for registers, the walk |
+| `src/verify.c` | `vf_ascii`, `vf_lbl`, `vf_regs`, `vf_bar`, `vf_size` |
+| `src/emit.c` | `em_apnd`, `em_head`, `em_ent`, `em_ins`: records to text |
+| `src/err.c` | the E-code table and `er_fail` |
+| `tests/` | `trunner` families plus `smoke.sh` over every open IR |
+| `tools/sweep.py` | every problem through the runner, into `results/sweep.json` |
+
+## Data model
+
+Three layers, each with one job.
+
+**KIR text** is the wire format. `kir 1`, `kernel <name>`, `launch` (grid, block,
+shared), one `arg` line per parameter in `meta.json` `arg_order` order, the
+`zero` lines, then `body` and one S-expression, then `end`. Nodes are
+`(Kind field=value ...)`, lists are `[...]`, expressions reuse the same shape,
+and the two atoms that are not literals are `op:<name>` and `dt:<name>`. Floats
+are written by `float.hex()` and read back with `strtod`, kept as f32 bits from
+then on: no float ever passes through `printf` on the way out.
+
+**`kir_t`** is the parsed form: four fixed pools (nodes, fields, items, string
+bytes) plus the launch and argument arrays. It is a 16 MB static struct, holds
+no pointers, and is read-only after `kr_load`, so every stage can walk it in any
+order. A node is a slice of the field pool; a list is a slice of the item pool;
+a name is an offset into the string pool. Offsets that came from the text are
+bounds-checked with `IX_CHK` before use.
+
+**The selection side** is the record list plus the tables that decide it: the
+register counters per file (`%r` `%rd` `%f` `%p`), name bindings with a mark per
+open scope, one home register per accumulator, and the shared-memory layout.
+A record is a `nv_ins_t`: an opcode, up to four sources, an optional guard
+predicate, an optional IR comment. Labels are records too, so the verifier can
+check them without a second structure.
+
+## Error codes
+
+One table in `src/err.c`, one format: `error[E0NN]: irptx: cannot lower <what>`
+on stderr, exit 1, nothing on stdout. `tests/rules.sh` fails if a code is used
+without a table entry.
+
+| Range | Stage |
+|---|---|
+| E000 | internal: a bug in irptx, not in the input |
+| E001-E009 | front end: IR file, `meta.json`, Emmy load, core missing or timed out |
+| E010-E019 | KIR reader: syntax, truncated input, unknown field, bad number |
+| E020-E059 | isel: unsupported kind, op, dtype or field value; unbound name; limit of the IR |
+| E060-E079 | verify: non-ASCII, undefined or duplicate label, register out of range, divergent barrier |
+| E080-E099 | limits: input, pool, nesting, record count, output size |
+
+Refusing is a feature. A module that assembles and computes the wrong answer is
+the worst thing this program can produce, so every stage returns a status, the
+first failure wins, and the emitter's buffer refuses rather than truncating.
+
+## Lowering, statement by statement
+
+**Tile** is the block. N is the product of its axis extents and the launch gives
+the geometry, so `gid = ctaid.x * block + tid.x` (or just `%tid.x` in a one-block
+grid) and the axes are decoded out of it row-major. `lane` and `warp` are bound
+only when the kernel spells those names. Surplus threads take `@p bra L_exit`
+once, at the top, before any work; if the body holds a barrier the policy also
+requires N to be a multiple of the block size, so whole blocks leave together.
+
+**Load** flattens the index against the buffer's own extents (a parameter's
+shape, or a shared array's), turns it into `base + flat*4` and emits
+`ld.global.f32`, or `ld.shared.f32` for an array. A constant index folds into
+`[%rd+imm]` with no address arithmetic. Two or four names become one `.v2` or
+`.v4` when the index is affine and every coefficient and constant, times its
+stride, is divisible by the width; otherwise they are that many scalar loads
+off one address, `+4*i` apart.
+
+**Assign** looks the op up by name, checks the arg count against its arity, looks
+the args up in scope, and emits. The destination is a fresh `%f` unless the name
+is an accumulator, whose home register is written in place.
+
+**Write** uses the same flattening and address. One value is one `st.global.f32`
+(value i at index+i), two or four are one vector store when aligned, and values
+that are not already a consecutive run are copied into one first. A shared-array
+target becomes `st.shared.f32`.
+
+**Accum** registers the accumulator on first sight with its op's identity (0 for
+add, 1 for multiply, -1e30 for maximum: never an infinity, because the IR's
+maximum is finite) and updates it in place: `acc = op(acc, value)`.
+
+**StridedLoop** is `i = start`, `L_top: setp.ge i, bound; @%p bra L_done; body;
+i += step; bra L_top; L_done:`. Before the top label it seeds every accumulator
+in its immediate body whose `axes` name this loop's axis. Without that an
+accumulator inside a loop restarts every trip, and a combine that reads its
+state before the Accum statement (as `f02` does) reads rubbish.
+
+**Cond** emits `setp` from the expression, `@!%p bra L_else`, the then body,
+`bra L_end`, the else body and `L_end:`. Each body gets its own scope, so names
+bound inside one are not visible in the other or after the branch.
+
+**Smem** is placed by a pre-pass over the Tile body, in document order, before
+the walk. It has to be: `r01` stores into `acc0_smem` four statements before the
+`Smem` that declares it. Placement is at max(align, 16) with the offset being
+the rounded running total, so every element of every array is 16-byte aligned and
+a vector access only has to prove its element index divisible. Past 48 KiB the
+whole layout moves into one `.extern .shared` pool.
+
+**Sync** is `bar.sync id[, count]`, or `bar.warp.sync` on this warp's
+activemask when the IR asks for a warp-level barrier.
+
+**WarpShuffle** runs offset = length/2 down to 1. Each state goes through `%r`
+with `shfl.sync.bfly.b32`, masked by this warp's activemask, comes back as `%f`
+and is bound to its `state_b` name; then the IR's combine statements run. An
+empty combine list means the accumulator's own op, folded with `state_b`.
+
+**TreeHalve** folds the per-warp partials in shared memory. `len = length/2`,
+and while `len >= 1`: threads with `tid < len` read `buf[tid+len]`, fold it into
+their state, write `buf[tid]` back; then one `bar.sync`, outside the predicate,
+and `len >>= 1`. A state that a thread did not participate in is left alone
+until the end, when every state is loaded from `buf[0]`, which by then holds the
+total, so whichever thread the IR writes from sees the right value.
+
+**Everything else** refuses with E020 by its IR name: `Init`, `Loop`, `Let`,
+the `CpAsync*` trio, `RegStore`, the tensor-core and TMA kinds, `Pre`, `Carry`,
+`Select`, `ZeroPrologue`. They belong to categories 3 and 5, and a refusal is
+better than a module that assembles and is wrong.
+
+## Decisions, in plain words
+
+The research notes number these; this is what each one means in the code.
+
+| # | In one sentence |
+|---|---|
+| R4 | row-major decode: the last axis is fastest, powers of two decode with `shr`/`and`, the rest with `div`/`rem` |
+| R5 | guard policy: N is the product of the extents; surplus threads exit once at the top, and with a barrier N must be a multiple of the block so whole blocks leave together |
+| R6 | affine indices: `sum(coef*var) + cst` is proved by `kx_aff`, and only an affine index can be folded or can prove alignment |
+| R7 | arithmetic forms: `.rn` everywhere so ptxas cannot fuse a mul and an add into one rounding; `ex2`/`lg2` for exp and log; finite identities |
+| R8 | seeding: an accumulator is seeded before its loop runs, from this file's home-register rule |
+| R9 | the warp butterfly: `shfl.sync.bfly.b32` at 16, 8, 4, 2, 1, with the member mask from `activemask` |
+| R10 | the shared tree, and one dynamic pool past 48 KiB of static arrays |
+| R11 | barriers: `bar.sync` with the IR's id, always outside any predicate |
+| R12 | atomics and async copy: category 3, not lowered yet |
+| R13 | vector width: 2 or 4, only when alignment is proved, else scalars |
+| M6 | the proof itself: every per-dimension coefficient and constant, times the stride, divisible by the width, and a 16-byte aligned base |
+| H1 | a seed goes down before the loop body, not on first sight of the Accum |
+| H2 | one home register per name for its whole life; an accumulator rebinds by writing that register |
 
 ## PTX idioms
 
