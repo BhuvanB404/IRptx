@@ -73,3 +73,31 @@ irptx Changelog
   the compiler is still a stub (Bhuvan B, 2026-10-25)
 - `is_wrt` lowers Write to one `st.global.f32` per value (value i at index+i, offset folded into the immediate); the output must be an `out` parameter (E022), atomic and swizzle are E020. p00 to p03 now compile (Bhuvan B, 2026-10-26)
 - `mm_vec` proves a 2 or 4 wide access aligned (ruling M6: every per-dimension affine coefficient and constant, times its stride, divisible by the width); `is_load` and `is_wrt` use `.v2`/`.v4` then and N scalars otherwise, and refuse counts other than 1, 2 or 4 (E020). Vector stores copy values into a consecutive `%f` run unless they already are one. p00 to p03 now store with `st.global.v2/v4.f32`; ptxas accepts them for sm_89 and sm_120 (Bhuvan B, 2026-10-26)
+
+- `is_acc`, `is_sloop` and `is_cond` lower category 2's control flow. An Accum is registered
+  on first sight with its op's identity and updated in one home register; a StridedLoop seeds
+  the accumulators that reduce its axis before the top label, so they do not restart each trip,
+  and steps at the back edge; a Cond branches with `@!%p` and gives each body its own scope.
+  An op with no identity and no base refuses E021, a zero step E059 (Bhuvan B, 2026-10-26)
+
+- shared memory is placed by a pre-pass over the Tile body in document order, because r01
+  stores into `acc0_smem` four statements before the `Smem` that declares it. `is_load` and
+  `is_wrt` route an array name to `ld/st.shared.f32` flattened against the array's own extents,
+  and `is_sync` emits `bar.sync id[, count]`, or a warp sync on this warp's activemask. The four
+  reductions now reach their WarpShuffle (Bhuvan B, 2026-10-26)
+
+- `is_shfl` folds across a warp with `shfl.sync.bfly.b32` from length/2 down to 1, carrying the
+  value through `%r` and back, and runs the IR's combine statements (or the accumulator's own op
+  when the list is empty). `is_tree` folds the per-warp partials in shared memory with one
+  barrier per step and outside the predicate, then broadcasts `buf[0]` into every state, so
+  whichever thread the IR writes from sees the total. r01 to r04 PASS on the runner, max abs err
+  1.526e-05, ptxas clean for sm_89 and sm_120: categories 1 and 2 are complete, the MVP
+  (Bhuvan B, 2026-10-26)
+
+### Tests
+
+- `is26` to `is35` cover the reduction shapes: the loop guard and back edge, the identity an
+  Accum seeds, the refused op with no identity and the refused zero-free step, the Cond branch
+  pair, a Write into a shared array that precedes its Smem statement, the barrier id, the
+  shuffle ladder 16..1 with its two refusals, and the tree's barrier, broadcast and refusals.
+  142 C tests pass (Bhuvan B, 2026-10-26)

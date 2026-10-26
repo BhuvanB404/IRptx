@@ -1,7 +1,9 @@
 /* t_is.c -- selection fixtures (is01..): small kernels through the real
  * reader and is_run, then the record list is read back with is_recs. Load
- * lowering first (is01..is09); T064 continues the numbering with the nested
- * loop fixtures. */
+ * lowering first (is01..is25), then the reductions: accumulators and strided
+ * loops (is26..), branches and shared memory (is29..), the warp shuffle
+ * (is32..) and the shared tree (is34..). T064 continues the numbering with
+ * the nested loop fixtures. */
 
 #include <stdint.h>
 #include <stdio.h>
@@ -15,20 +17,27 @@ static char ib[4096];               /* generated KIR text */
 static char ie[512];                /* captured stderr */
 
 /* A kernel with the argument lines `args` and a Tile of one axis a0 of
- * extent 8 whose body is `body`; the launch is one block of 8. */
-static int is_go(const char *args, const char *body)
+ * extent `ext`, launched as one block of `blk`. The warp and tree fixtures
+ * need whole warps in the block, which a fixed 8 can never offer. */
+static int is_gox(const char *args, const char *body, int ext, int blk)
 {
     int rc;
 
-    snprintf(ib, sizeof ib, "kir 1\nkernel k\nlaunch 1 1 1 8 1 1 0\n%sbody\n"
-        "[(Tile axes=[(Axis name=\"a0\" extent=(Dim expr=(Literal value=8 dtype=\"int\") hint=none) window=none)] "
-        "body=[%s] block_threads=none aux_threads=0 raster_axes=none raster_group=none raster_orient=\"m\")]\nend\n",
-        args, body);
+    snprintf(ib, sizeof ib, "kir 1\nkernel k\nlaunch 1 1 1 %d 1 1 0\n%sbody\n"
+        "[(Tile axes=[(Axis name=\"a0\" extent=(Dim expr=(Literal value=%d dtype=\"int\") hint=none) window=none)] "
+        "body=[%s] block_threads=%d aux_threads=0 raster_axes=none raster_group=none raster_orient=\"m\")]\nend\n",
+        blk, args, ext, body, blk);
     if (kr_load(ib, strlen(ib)) != 0) return -1;
     th_cap_on();
     rc = is_run(kr_get());
     th_cap_off(ie, sizeof ie);
     return rc;
+}
+
+/* The eight-thread kernel the load and store fixtures use. */
+static int is_go(const char *args, const char *body)
+{
+    return is_gox(args, body, 8, 8);
 }
 
 /* The n-th (from 0) ld.global.f32 record, or NULL. */
@@ -413,3 +422,183 @@ static void is25(void)
     PASS();
 }
 TH_REG("is", 25, "a misaligned Write of 2 values is two scalar stores; 3 values is E020", is25)
+
+/* ---- Reductions: accumulators, loops, branches, shared, warp, tree ---- */
+
+#define XINR "arg 0 x0 in f32 1 128\narg 1 y out f32 1 128\n"
+#define A1V "(Var name=\"a1\")"
+#define AXR(nm, n) "(Axis name=\"" nm "\" extent=(Dim expr=" LIT(n) " hint=none) window=none)"
+#define SL(ax, st, sp, body) "(StridedLoop axis=" ax " start=" st " step=" sp \
+    " body=[" body "] unroll=false end=none seed=true)"
+#define ACCX(nm, v, op, axes) "(Accum name=\"" nm "\" value=\"" v "\" op=op:" op \
+    " dtype=dt:f32 axes=[" axes "] base=none)"
+#define ACC(nm, v, op) ACCX(nm, v, op, "\"a1\"")
+#define CND(c, body, els) "(Cond cond=" c " body=[" body "] else_body=[" els "])"
+#define EQA0 "(BinaryExpr op=\"==\" left=" A0 " right=" LIT(0) ")"
+#define LANE0 "(BinaryExpr op=\"==\" left=(Var name=\"lane\") right=" LIT(0) ")"
+#define SM(nm, n) "(Smem name=\"" nm "\" extents=[" LIT(n) "] dtype=\"float\" align=0)"
+#define SYN(i) "(Sync barrier_id=" #i " count=none warp=false)"
+#define WS(n, cm) "(WarpShuffle state=[\"acc\"] state_b=[\"acc__o\"] combine_states=" cm \
+    " length=" #n " dtype=dt:f32)"
+#define TRE(l, inner) "(TreeHalve bufs=[\"sm\"] state=[\"acc\"] state_b=[\"acc__o\"] " \
+    "combine_states=[(Assign name=\"acc\" op=op:add args=[\"acc\" \"acc__o\"] dtype=none)] " \
+    "length=" #l " tid_var=\"warp\" dtype=dt:f32 barrier_id=0 barrier_count=none inner=" inner ")"
+
+/* The r01 shape: a partial per warp, into shared, a barrier, a tree, a write. */
+#define TREEK(l, inner) LD("p", A0, "dt:f32") ACCX("acc", "p", "add", "\"a1\"") \
+    SM("sm", 4) CND(LANE0, WR("sm", "(Var name=\"warp\")", "\"acc\"", WOK), "") \
+    SYN(0) TRE(l, inner) CND(EQA0, WR("y", A0, "\"acc\"", WOK), "")
+
+/* Record index of the n-th (from 0) record with opcode `op`, or -1. */
+static long is_pos(nv_op_t op, uint32_t n)
+{
+    uint32_t cnt, i;
+    const nv_ins_t *r = is_recs(&cnt);
+
+    for (i = 0; i < cnt; i++)
+        if (r[i].op == op && n-- == 0) return (long)i;
+    return -1;
+}
+
+static void is26(void)
+{
+    CHEQ(is_gox(XIN, SL(AXR("a1", 64), "(Var name=\"a0\")", LIT(8),
+        LD("p", A1V, "dt:f32") ACC("acc", "p", "add"))
+        WR("y", A0, "\"acc\"", WOK), 8, 8), 0);
+    CHEQ(is_cnt(NV_LABEL), 2u);
+    CHEQ(is_cnt(NV_BRA), 2u);
+    CHEQ(is_cnt(NV_SETP_GE_S32), 1u);
+    CHEQ(is_cnt(NV_MOV_S32), 1u);          /* i = start */
+    CHEQ(is_cnt(NV_ADD_S32), 1u);          /* i += step, at the back edge only */
+    CHEQ(is_cnt(NV_LD_GLOBAL_F32), 1u);
+    CHEQ(is_cnt(NV_ADD_RN_F32), 1u);
+    CHECK(is_pos(NV_MOV_F32, 0) >= 0 && is_pos(NV_LABEL, 0) >= 0);
+    CHECK(is_pos(NV_MOV_F32, 0) < is_pos(NV_LABEL, 0));    /* seeded before the loop */
+    PASS();
+}
+TH_REG("is", 26, "a StridedLoop emits the guard, its body and one back edge, seeded first", is26)
+
+static void is27(void)
+{
+    const nv_ins_t *m;
+
+    CHEQ(is_gox(XIN, SL(AXR("a1", 64), "(Var name=\"a0\")", LIT(8),
+        LD("p", A1V, "dt:f32") ACC("acc", "p", "multiply"))
+        WR("y", A0, "\"acc\"", WOK), 8, 8), 0);
+    m = is_nth(NV_MOV_F32, 0);
+    CHECK(m && m->src[0].kind == OP_FIMM && m->src[0].v == 0x3F800000u);
+    PASS();
+}
+TH_REG("is", 27, "an Accum of multiply seeds 1.0f, not 0.0", is27)
+
+static void is28(void)
+{
+    CHEQ(is_gox(XIN, SL(AXR("a1", 64), "(Var name=\"a0\")", LIT(8),
+        LD("p", A1V, "dt:f32") ACC("acc", "p", "subtract"))
+        WR("y", A0, "\"acc\"", WOK), 8, 8), 1);
+    CHECK(strncmp(ie, "error[E021]", 11) == 0);
+    CHEQ(is_cnt(NV_SUB_RN_F32), 0u);
+    PASS();
+}
+TH_REG("is", 28, "an Accum whose op has no identity and no base is refused E021", is28)
+
+static void is29(void)
+{
+    const nv_ins_t *b0, *b1;
+
+    CHEQ(is_gox(XIN, LD("p", A0, "dt:f32") CND(EQA0, WR("y", A0, "\"p\"", WOK), ""),
+        8, 8), 0);
+    CHEQ(is_cnt(NV_LABEL), 2u);
+    CHEQ(is_cnt(NV_BRA), 2u);
+    b0 = is_nth(NV_BRA, 0);
+    CHECK(b0 && b0->prd.kind == OP_REG && b0->prd.rf == RF_P && b0->pneg == 1u);
+    b1 = is_nth(NV_BRA, 1);
+    CHECK(b1 && b1->prd.kind == OP_NONE);
+    CHECK(is_pos(NV_ST_GLOBAL_F32, 0) > is_pos(NV_BRA, 0));
+    CHECK(is_pos(NV_ST_GLOBAL_F32, 0) < is_pos(NV_BRA, 1));
+    PASS();
+}
+TH_REG("is", 29, "a Cond branches over its body with @!%p and rejoins at the end label", is29)
+
+static void is30(void)
+{
+    CHEQ(is_gox(XIN, LD("p", A0, "dt:f32")
+        CND(EQA0, WR("sm", A0, "\"p\"", WOK), "") SM("sm", 8)
+        WR("y", A0, "\"p\"", WOK), 8, 8), 0);
+    CHEQ(is_cnt(NV_ST_SHARED_F32), 1u);
+    CHEQ(is_cnt(NV_ST_GLOBAL_F32), 1u);
+    CHECK(sm_get()->narr == 1u);
+    CHECK(sm_get()->arr[0].elems == 8u);
+    CHECK(sm_get()->arr[0].rank == 1u);
+    CHECK(sm_get()->arr[0].dim[0] == 8);
+    PASS();
+}
+TH_REG("is", 30, "a Write into a shared array is st.shared.f32 even before its Smem statement", is30)
+
+static void is31(void)
+{
+    const nv_ins_t *s;
+
+    CHEQ(is_gox(XIN, LD("p", A0, "dt:f32") SYN(3) WR("y", A0, "\"p\"", WOK), 8, 8), 0);
+    s = is_nth(NV_BAR_SYNC, 0);
+    CHECK(s && s->src[0].kind == OP_IMM && s->src[0].v == 3u);
+    PASS();
+}
+TH_REG("is", 31, "a Sync is bar.sync with the IR's barrier id", is31)
+
+static void is32(void)
+{
+    const nv_ins_t *h;
+    uint32_t i;
+
+    CHEQ(is_gox(XINR, LD("p", A0, "dt:f32") ACCX("acc", "p", "add", "\"a1\"")
+        WS(32, "[]") WR("y", A0, "\"acc\"", WOK), 32, 32), 0);
+    CHEQ(is_cnt(NV_SHFL_BFLY), 5u);
+    for (i = 0; i < 5u; i++) {
+        h = is_nth(NV_SHFL_BFLY, i);
+        CHECK(h && h->src[1].kind == OP_IMM && h->src[1].v == (16u >> i));
+        CHECK(h && h->src[2].v == 31u && h->src[3].kind == OP_REG);
+    }
+    CHEQ(is_cnt(NV_ADD_RN_F32), 6u);       /* the Accum, then one combine per step */
+    PASS();
+}
+TH_REG("is", 32, "a WarpShuffle of 32 halves the offset 16..1, shuffling then combining", is32)
+
+static void is33(void)
+{
+    CHEQ(is_gox(XINR, LD("p", A0, "dt:f32") ACCX("acc", "p", "add", "\"a1\"")
+        WS(3, "[]") WR("y", A0, "\"acc\"", WOK), 32, 32), 1);
+    CHECK(strncmp(ie, "error[E034]", 11) == 0);
+    CHEQ(is_gox(XIN, LD("p", A0, "dt:f32") ACCX("acc", "p", "add", "\"a1\"")
+        WS(32, "[]") WR("y", A0, "\"acc\"", WOK), 8, 8), 1);
+    CHECK(strncmp(ie, "error[E034]", 11) == 0);
+    CHEQ(is_cnt(NV_SHFL_BFLY), 0u);
+    PASS();
+}
+TH_REG("is", 33, "a shuffle of length 3, or in a block that is not whole warps, is E034", is33)
+
+static void is34(void)
+{
+    CHEQ(is_gox(XINR, TREEK(4, "none"), 128, 128), 0);
+    CHEQ(is_cnt(NV_BAR_SYNC), 2u);         /* the Sync, and one in the tree body */
+    CHEQ(is_cnt(NV_LD_SHARED_F32), 2u);    /* the fold, and the broadcast of buf[0] */
+    CHEQ(is_cnt(NV_ST_SHARED_F32), 2u);    /* the Cond's store, and the fold's */
+    CHEQ(is_cnt(NV_SHR_S32), 2u);          /* warp = tid >> 5, and the halving */
+    PASS();
+}
+TH_REG("is", 34, "a TreeHalve of 4 emits a barrier per step and broadcasts buf[0] into the state", is34)
+
+static void is35(void)
+{
+    CHEQ(is_gox(XINR, TREEK(4, LIT(0)), 128, 128), 1);
+    CHECK(strncmp(ie, "error[E020]", 11) == 0);
+    CHEQ(is_gox(XINR, TREEK(3, "none"), 128, 128), 1);
+    CHECK(strncmp(ie, "error[E020]", 11) == 0);
+    /* A refusal leaves the records it had already made (the Sync above the
+     * tree); what it must not leave is a poisoned state, so the good tree has
+     * to compile again from scratch. */
+    CHEQ(is_gox(XINR, TREEK(4, "none"), 128, 128), 0);
+    CHEQ(is_cnt(NV_BAR_SYNC), 2u);
+    PASS();
+}
+TH_REG("is", 35, "a tree with an inner state or a length of 3 is refused E020", is35)

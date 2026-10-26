@@ -108,15 +108,16 @@ int mm_vec(const int32_t *dim, uint32_t rank, const kir_val_t *idx, uint32_t w);
  * leaves s32. */
 int mm_gaddr(uint32_t arg, nv_opnd_t flat, nv_opnd_t *areg, int32_t *boff);
 
-/* Shared layout, built in declaration order by the pre-pass (T040). Adds an
- * array of `elems` f32 with the IR's `align` (0 allowed). Every array is
- * declared and placed at max(align, 16) and its offset is the running total
- * rounded up to that, so every shared offset is 16-aligned and a v2/v4
+/* Shared layout, built in document order by the pre-pass (is_spre). Adds an
+ * array of the extents dim[0..rank-1] f32 with the IR's `align` (0 allowed),
+ * keeping those extents so an index list can be flattened against them. Every
+ * array is declared and placed at max(align, 16) and its offset is the running
+ * total rounded up to that, so every shared offset is 16-aligned and a v2/v4
  * access needs only the element-index divisibility check. *id is its slot.
- * E059 for zero elems, a non-power-of-two align or an absurd size, E081 when
- * IR_MAX_SMEM arrays exist. The pool is dynamic (is_smem_t.dyn) once the
- * total passes 48 KiB. */
-int sm_add(uint32_t name, uint32_t elems, uint32_t align, uint32_t *id);
+ * E059 for an empty or absurd extent, a non-power-of-two align or a size past
+ * 1 GiB, E081 when IR_MAX_SMEM arrays exist. The pool is dynamic
+ * (is_smem_t.dyn) once the total passes 48 KiB. */
+int sm_add(uint32_t name, const int32_t *dim, uint32_t rank, uint32_t align, uint32_t *id);
 
 /* Slot of the shared array called `name`, or E022. */
 int sm_find(uint32_t name, uint32_t *id);
@@ -192,10 +193,10 @@ int is_tend(void);
  * frame has no scope of its own (is_run opened the Tile's). Nesting is allowed up to IR_MAX_DEP
  * frames, counting the Tile body.
  *
- * Pending-close kinds. IC_NONE does nothing. The others are written by the
- * task that needs them and refuse E000 until then (nothing registers them
- * before). `a` and `b` carry two label numbers (or whatever the close
- * needs), `nd` the statement node. */
+ * Pending-close kinds. IC_NONE does nothing. IC_LOOP steps a StridedLoop's
+ * variable and branches back; IC_CTHEN closes a Cond's then list and visits
+ * its else list; IC_CEND closes that else list. `a` and `b` carry two label
+ * numbers, `nd` the statement node. */
 typedef enum {
     IC_NONE = 0,
     IC_LOOP,                        /* back edge, step, branch, done label */

@@ -1,13 +1,13 @@
 {
-  "commit": "ca588561acf778ad077f6740bed04222ca08bc15",
-  "timestamp": "2026-10-26T09:54:00+05:30",
+  "commit": "655cb6129c13920a0425946911b4b85e2802d9c6",
+  "timestamp": "2026-10-26T18:47:11+05:30",
   "summary": {
     "1": [
       4,
       4
     ],
     "2": [
-      0,
+      4,
       4
     ],
     "3": [
@@ -29,63 +29,63 @@
       "category": 5,
       "set": "open",
       "status": "compile_error",
-      "detail": "that is not PTX: it is empty",
+      "detail": "error[E021]: irptx: cannot lower the op 'reciprocal' is not in the op table",
       "median_us": null,
-      "compile_s": 0.01
+      "compile_s": 0.22
     },
     {
       "problem": "a02_attention_128",
       "category": 5,
       "set": "open",
       "status": "compile_error",
-      "detail": "that is not PTX: it is empty",
+      "detail": "error[E021]: irptx: cannot lower the op 'reciprocal' is not in the op table",
       "median_us": null,
-      "compile_s": 0.01
+      "compile_s": 0.23
     },
     {
       "problem": "f01_rmsnorm",
       "category": 4,
       "set": "open",
       "status": "compile_error",
-      "detail": "that is not PTX: it is empty",
+      "detail": "error[E021]: irptx: cannot lower the op 'reciprocal' is not in the op table",
       "median_us": null,
-      "compile_s": 0.01
+      "compile_s": 0.22
     },
     {
       "problem": "f02_row_softmax",
       "category": 4,
       "set": "open",
       "status": "compile_error",
-      "detail": "that is not PTX: it is empty",
+      "detail": "error[E022]: irptx: cannot lower name 'in0__acc1_sa' that is bound in no enclosing scope",
       "median_us": null,
-      "compile_s": 0.01
+      "compile_s": 0.21
     },
     {
       "problem": "f03_l2norm",
       "category": 4,
       "set": "open",
       "status": "compile_error",
-      "detail": "that is not PTX: it is empty",
+      "detail": "error[E021]: irptx: cannot lower the op 'sqrt' is not in the op table",
       "median_us": null,
-      "compile_s": 0.01
+      "compile_s": 0.22
     },
     {
       "problem": "m01_matmul_512",
       "category": 3,
       "set": "open",
       "status": "compile_error",
-      "detail": "that is not PTX: it is empty",
+      "detail": "error[E020]: irptx: cannot lower a Init statement",
       "median_us": null,
-      "compile_s": 0.01
+      "compile_s": 0.23
     },
     {
       "problem": "m02_matmul_rect",
       "category": 3,
       "set": "open",
       "status": "compile_error",
-      "detail": "that is not PTX: it is empty",
+      "detail": "error[E020]: irptx: cannot lower a Init statement",
       "median_us": null,
-      "compile_s": 0.01
+      "compile_s": 0.21
     },
     {
       "problem": "p00_scalar_add",
@@ -93,8 +93,8 @@
       "set": "open",
       "status": "pass",
       "detail": "",
-      "median_us": 23.14,
-      "compile_s": 0.22
+      "median_us": 20.54,
+      "compile_s": 0.23
     },
     {
       "problem": "p01_vector_add",
@@ -102,8 +102,8 @@
       "set": "open",
       "status": "pass",
       "detail": "",
-      "median_us": 23.42,
-      "compile_s": 0.2
+      "median_us": 20.51,
+      "compile_s": 0.21
     },
     {
       "problem": "p02_scale_shift",
@@ -111,8 +111,8 @@
       "set": "open",
       "status": "pass",
       "detail": "",
-      "median_us": 16.16,
-      "compile_s": 0.21
+      "median_us": 15.14,
+      "compile_s": 0.23
     },
     {
       "problem": "p03_relu_mul",
@@ -120,44 +120,44 @@
       "set": "open",
       "status": "pass",
       "detail": "",
-      "median_us": 16.22,
+      "median_us": 15.36,
       "compile_s": 0.21
     },
     {
       "problem": "r01_array_sum",
       "category": 2,
       "set": "open",
-      "status": "compile_error",
-      "detail": "that is not PTX: it is empty",
-      "median_us": null,
-      "compile_s": 0.01
+      "status": "pass",
+      "detail": "",
+      "median_us": 23.71,
+      "compile_s": 0.21
     },
     {
       "problem": "r02_big_sum",
       "category": 2,
       "set": "open",
-      "status": "compile_error",
-      "detail": "that is not PTX: it is empty",
-      "median_us": null,
-      "compile_s": 0.01
+      "status": "pass",
+      "detail": "",
+      "median_us": 41.18,
+      "compile_s": 0.26
     },
     {
       "problem": "r03_mean",
       "category": 2,
       "set": "open",
-      "status": "compile_error",
-      "detail": "that is not PTX: it is empty",
-      "median_us": null,
-      "compile_s": 0.01
+      "status": "pass",
+      "detail": "",
+      "median_us": 32.35,
+      "compile_s": 0.24
     },
     {
       "problem": "r04_row_sum",
       "category": 2,
       "set": "open",
-      "status": "compile_error",
-      "detail": "that is not PTX: it is empty",
-      "median_us": null,
-      "compile_s": 0.01
+      "status": "pass",
+      "detail": "",
+      "median_us": 24.45,
+      "compile_s": 0.21
     }
   ]
 }

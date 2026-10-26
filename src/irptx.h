@@ -248,9 +248,11 @@ typedef struct {
 /* One shared array. Offsets are rounded up to the alignment. */
 typedef struct {
     uint32_t name;
-    uint32_t elems;
+    uint32_t elems;                 /* product of the extents */
     uint32_t align;                 /* max(IR align, 16); declared at this align */
     uint32_t off;                   /* byte offset in the pool */
+    uint8_t  rank;                  /* 1 .. IR_MAX_DIM */
+    int32_t  dim[IR_MAX_DIM];       /* extents as the IR wrote them, for flattening */
 } is_sarr_t;
 
 /* The shared-memory layout, built by a pre-pass over the Tile body. */
