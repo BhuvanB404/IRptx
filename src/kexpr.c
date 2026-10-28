@@ -598,3 +598,15 @@ int kx_aff(const kir_val_t *e, kx_aff_t *out)
     *out = s[0];
     return 1;
 }
+
+/* ---- Uniformity ---- */
+
+int kx_uni(const kir_val_t *e)
+{
+    uint32_t i;
+
+    if (kx_flat(&KF, e, 0)) return 0;
+    for (i = 0; i < KF.n; i++)
+        if (KF.tk[i].k == KT_VAR && !is_funi(KF.tk[i].nm)) return 0;
+    return 1;
+}

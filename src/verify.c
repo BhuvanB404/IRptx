@@ -6,7 +6,8 @@
  * P11 are properties of the text the emitter writes, not of the records.
  *
  * Codes: E061 non-ASCII, E060 label trouble, E079 for a register out of
- * range or a barrier problem, E083 for too many records (output size, E084,
+ * range or a barrier problem, E062 for a barrier in a loop whose trip count
+ * may differ between threads, E083 for too many records (output size, E084,
  * is the emitter's). Each failure prints one line naming the record index
  * and what is wrong.
  *
@@ -14,14 +15,19 @@
  * "divergent" when it carries a guard predicate, goes forward (its label is
  * defined later in the list) and is neither
  *   - the whole-kernel guard exit: its target is the exit label, the label
- *     that sits right before the final `ret` (every thread of a block takes
- *     it together under H4, and is_tile only emits it when no barrier can
- *     follow for part of a block); nor
- *   - a loop exit: the record just before the target label (comments and
- *     nops skipped) is an unguarded branch back to a label defined before
- *     this branch. That is the shape `L_top: ... @p bra L_done; ...;
- *     bra L_top; L_done:`. Loop bounds are launch constants, so the exit is
- *     taken by every thread of the block on the same trip.
+ *     that sits right before the final `ret`, and isel marked it `uni`
+ *     because the cell count is a multiple of the block size, so every
+ *     thread of a block takes it together (is_tile refuses a barrier in a
+ *     body whose surplus threads are not whole blocks); nor
+ *   - a uniform loop exit: the record just before the target label
+ *     (comments and nops skipped) is an unguarded branch back to a label
+ *     defined before this branch, the shape `L_top: ... @p bra L_done;
+ *     ...; bra L_top; L_done:`, AND isel marked the branch `uni` because
+ *     it proved the loop's start, step and bound the same in every thread
+ *     of the block. Only then does every thread take the exit on the same
+ *     trip. A loop exit without the mark (a StridedLoop starting at a
+ *     thread's own index, say) still opens a region, counted apart so its
+ *     refusal can say so.
  * The records after a divergent branch and before its target label are its
  * region. A bar.sync, a shfl, or any guarded barrier inside a region is
  * refused. A Cond lowers to `@!p bra L_else`, so its then and else bodies
@@ -46,6 +52,7 @@
 
 static uint32_t VF_POS[IR_MAX_REG + 1u];    /* label number to record index + 1; 0 = undefined */
 static int32_t  VF_COV[IR_MAX_INS + 2u];    /* difference array of divergent regions */
+static int32_t  VF_LCOV[IR_MAX_INS + 2u];   /* the same, for loops of thread-varying trip count */
 static char     VF_WHAT[VF_MSG];
 
 /* ---- Helpers ---- */
@@ -183,9 +190,10 @@ static int vf_barops(const nv_ins_t *q, uint32_t i)
     return 0;
 }
 
-/* 1 when the guarded forward branch at `i` to record index `j` is a loop
- * exit: the record before label `j` is an unguarded branch to a label
- * defined before `i`. */
+/* 1 when the guarded forward branch at `i` to record index `j` has the shape
+ * of a loop exit: the record before label `j` is an unguarded branch to a
+ * label defined before `i`. Whether its trip count is uniform is the
+ * branch's own `uni` mark, which the caller reads. */
 static int vf_lexit(const nv_ins_t *r, uint32_t i, uint32_t j)
 {
     uint32_t k = j;
@@ -202,35 +210,43 @@ static int vf_lexit(const nv_ins_t *r, uint32_t i, uint32_t j)
 }
 
 /* Mark the records strictly between each divergent forward branch and its
- * target in VF_COV (a difference array, summed by the caller). An unguarded
- * forward branch met inside a region is the `bra L_end` that closes a then
- * body, so the else body between it and L_end is a region too. */
+ * target in VF_COV, or in VF_LCOV for a loop exit without the uniform mark
+ * (difference arrays, summed by the caller). An unguarded forward branch
+ * met inside a region is the `bra L_end` that closes a then body, so the
+ * else body between it and L_end is a region too. */
 static void vf_regions(const nv_ins_t *r, uint32_t n)
 {
     uint32_t xl = vf_exit(r, n), i;
     int32_t depth = 0;
+    int32_t *cov;
 
     memset(VF_COV, 0, ((size_t)n + 2u) * sizeof VF_COV[0]);
+    memset(VF_LCOV, 0, ((size_t)n + 2u) * sizeof VF_LCOV[0]);
     for (i = 0; i < n; i++) {
         uint32_t t = r[i].src[0].v, j;
         int grd = r[i].prd.kind == OP_REG;
         depth += VF_COV[i];
         if (r[i].op != NV_BRA || (!grd && depth <= 0)) continue;
         if (r[i].src[0].kind != OP_LBL || IX_CHK(t, IR_MAX_REG + 1u) || !VF_POS[t]) continue;
-        if (xl && t == xl) continue;
+        if (xl && t == xl && r[i].uni) continue;
         j = VF_POS[t] - 1u;
-        if (j <= i || (grd && vf_lexit(r, i, j))) continue;
-        VF_COV[i + 1u]++;
-        VF_COV[j]--;
+        if (j <= i) continue;
+        cov = VF_COV;
+        if (grd && vf_lexit(r, i, j)) {
+            if (r[i].uni) continue;
+            cov = VF_LCOV;
+        }
+        cov[i + 1u]++;
+        cov[j]--;
     }
 }
 
-/* P8, M7: no bar.sync or shfl in a divergent region or under its own guard,
- * and bar.sync operands in range. */
+/* P8, M7: no bar.sync or shfl in a divergent region, under its own guard
+ * or in a loop whose trip count may differ, and bar.sync operands in range. */
 static int vf_bar(void)
 {
     uint32_t n, i, at = 0;
-    int32_t depth = 0;
+    int32_t depth = 0, ldep = 0;
     const nv_ins_t *r = is_recs(&n);
 
     (void)vf_fill(r, n, &at);           /* vf_lbl has already refused a bad table */
@@ -238,11 +254,17 @@ static int vf_bar(void)
     for (i = 0; i < n; i++) {
         int bar = r[i].op == NV_BAR_SYNC;
         depth += VF_COV[i];
+        ldep += VF_LCOV[i];
         if (!bar && r[i].op != NV_SHFL_BFLY) continue;
         if (depth > 0 || r[i].prd.kind != OP_NONE)
             return vf_fail(E079, bar ? "bar.sync at record %u is under a divergent branch or guard"
                                      : "shfl at record %u is under a divergent branch or guard",
                            i, 0);
+        if (ldep > 0)
+            return vf_fail(E062, bar ? "bar.sync at record %u in a loop whose trip count may "
+                                       "differ between threads of a block"
+                                     : "shfl at record %u in a loop whose trip count may "
+                                       "differ between threads of a block", i, 0);
         if (bar && vf_barops(&r[i], i)) return 1;
     }
     return 0;

@@ -63,6 +63,14 @@ static void vf_mov(nv_opnd_t d) { is_ins(NV_MOV_U32, d, is_oimm(1), is_onone(), 
 static void vf_lab(uint32_t n) { is_ins(NV_LABEL, is_olbl(n), is_onone(), is_onone(), is_onone()); }
 static void vf_bra(uint32_t n) { is_ins(NV_BRA, is_onone(), is_olbl(n), is_onone(), is_onone()); }
 static void vf_gbra(uint32_t n, nv_opnd_t p) { vf_bra(n); is_guard(p, 0); }
+/* A guarded branch with isel's uniform-trip-count mark on it. */
+static void vf_ubra(uint32_t n, nv_opnd_t p)
+{
+    uint32_t c;
+
+    vf_gbra(n, p);
+    ((nv_ins_t *)is_recs(&c))[c - 1u].uni = 1;
+}
 static void vf_ret(void) { is_ins(NV_RET, is_onone(), is_onone(), is_onone(), is_onone()); }
 static void vf_bar(int id, int cnt, int two)
 {
@@ -356,11 +364,17 @@ static void vf24(void)
 
     CHEQ(vf_fresh(), 0);
     p = vf_p(); is_lbl(&l1);
-    vf_gbra(l1, p); vf_bar(0, 64, 1); vf_lab(l1); vf_ret();
+    vf_ubra(l1, p); vf_bar(0, 64, 1); vf_lab(l1); vf_ret();
     CHEQ(vf_chk(), 0);
+    /* Without the whole-blocks mark it is an ordinary divergent branch: a
+     * loop that happens to end the kernel must not pass for the guard. */
+    CHEQ(vf_fresh(), 0);
+    p = vf_p(); is_lbl(&l1);
+    vf_gbra(l1, p); vf_bar(0, 64, 1); vf_lab(l1); vf_ret();
+    CHEQ(vf_chk(), 79);
     PASS();
 }
-TH_REG("vf", 24, "barriers: the final guard exit does not open a region", vf24)
+TH_REG("vf", 24, "barriers: the marked final guard exit does not open a region, an unmarked one does", vf24)
 
 static void vf25(void)
 {
@@ -369,11 +383,11 @@ static void vf25(void)
 
     CHEQ(vf_fresh(), 0);
     p = vf_p(); is_lbl(&l1); is_lbl(&l2);
-    vf_lab(l1); vf_gbra(l2, p); vf_bar(0, 64, 1); vf_bra(l1); vf_lab(l2);
+    vf_lab(l1); vf_ubra(l2, p); vf_bar(0, 64, 1); vf_bra(l1); vf_lab(l2);
     CHEQ(vf_chk(), 0);
     PASS();
 }
-TH_REG("vf", 25, "barriers: a loop exit after an unguarded back-branch is exempt", vf25)
+TH_REG("vf", 25, "barriers: a uniform loop exit after an unguarded back-branch is exempt", vf25)
 
 static void vf26(void)
 {
@@ -382,7 +396,7 @@ static void vf26(void)
 
     CHEQ(vf_fresh(), 0);
     p = vf_p(); is_lbl(&l1); is_lbl(&l2); is_lbl(&l3);
-    vf_gbra(l3, p); vf_lab(l1); vf_gbra(l2, p); vf_bar(0, 64, 1); vf_bra(l1); vf_lab(l2); vf_lab(l3);
+    vf_gbra(l3, p); vf_lab(l1); vf_ubra(l2, p); vf_bar(0, 64, 1); vf_bra(l1); vf_lab(l2); vf_lab(l3);
     CHEQ(vf_chk(), 79);
     PASS();
 }
@@ -491,3 +505,43 @@ static void vf34(void)
     PASS();
 }
 TH_REG("vf", 34, "run: the real empty-Tile record list passes", vf34)
+
+/* ---- E062: loops whose trip count may differ ---- */
+
+/* The same loop shape as vf25 without isel's uniform mark: a StridedLoop
+ * from a thread's own index leaves some threads a trip short, and they
+ * would never reach the barrier the others wait at. */
+static void vf35(void)
+{
+    nv_opnd_t p;
+    uint32_t l1, l2;
+
+    CHEQ(vf_fresh(), 0);
+    p = vf_p(); is_lbl(&l1); is_lbl(&l2);
+    vf_lab(l1); vf_gbra(l2, p); vf_bar(0, 64, 1); vf_bra(l1); vf_lab(l2);
+    CHEQ(vf_chk(), 62);
+    CHECK(strstr(eb, "trip count") != NULL);
+    PASS();
+}
+TH_REG("vf", 35, "barriers: a bar.sync in a loop without the uniform mark is E062", vf35)
+
+/* A shuffle in such a loop is refused the same way; one after it passes. */
+static void vf36(void)
+{
+    nv_opnd_t p, m, d;
+    uint32_t l1, l2;
+
+    CHEQ(vf_fresh(), 0);
+    p = vf_p(); m = vf_r(); d = vf_r(); is_lbl(&l1); is_lbl(&l2);
+    vf_lab(l1); vf_gbra(l2, p);
+    is_ins(NV_SHFL_BFLY, d, m, is_oimm(1), is_oimm(31));
+    vf_bra(l1); vf_lab(l2);
+    CHEQ(vf_chk(), 62);
+    CHEQ(vf_fresh(), 0);
+    p = vf_p(); m = vf_r(); d = vf_r(); is_lbl(&l1); is_lbl(&l2);
+    vf_lab(l1); vf_gbra(l2, p); vf_mov(m); vf_bra(l1); vf_lab(l2);
+    is_ins(NV_SHFL_BFLY, d, m, is_oimm(1), is_oimm(31));
+    CHEQ(vf_chk(), 0);
+    PASS();
+}
+TH_REG("vf", 36, "barriers: a shuffle in an unmarked loop is E062, one after the loop passes", vf36)

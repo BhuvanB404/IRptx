@@ -111,13 +111,29 @@ int is_pop(void)
     return 0;
 }
 
-int is_bset(uint32_t name, nv_opnd_t opd)
+/* Bind, with the uniformity flag a loop's trip-count proof reads back. */
+static int is_bind(uint32_t name, nv_opnd_t opd, uint8_t uni)
 {
     uint32_t b = IX_PNEW(S.nbind, IR_MAX_BIND);
 
     if (b == 0) return er_fail(E081, "more live name bindings than the table holds");
     S.bind[b - 1u].name = name;
     S.bind[b - 1u].opd = opd;
+    S.bind[b - 1u].uni = uni;
+    return 0;
+}
+
+int is_bset(uint32_t name, nv_opnd_t opd) { return is_bind(name, opd, 0); }
+int is_bsetu(uint32_t name, nv_opnd_t opd) { return is_bind(name, opd, 1); }
+
+int is_funi(uint32_t name)
+{
+    uint32_t i = S.nbind;
+
+    while (i > 0) {
+        i--;
+        if (is_same(S.bind[i].name, name)) return S.bind[i].uni;
+    }
     return 0;
 }
 
@@ -236,6 +252,13 @@ int is_guard(nv_opnd_t prd, int neg)
     S.ins[S.nins - 1u].prd = prd;
     S.ins[S.nins - 1u].pneg = neg ? 1u : 0u;
     return 0;
+}
+
+/* Mark the last record, a loop's exit branch, as taken on the same trip by
+ * every thread of the block, so verify may allow a barrier in its body. */
+static void is_muni(void)
+{
+    if (S.nins > 0) S.ins[S.nins - 1u].uni = 1;
 }
 
 int is_cmt(uint32_t off)
@@ -858,6 +881,7 @@ static int is_exit(nv_opnd_t gid, int64_t n)
     if (is_lbl(&S.xlbl) || rg_new(RF_P, &p)) return 1;
     if (is_ins(NV_SETP_GE_S32, p, gid, is_oimm((int32_t)n), is_onone())) return 1;
     if (is_ins(NV_BRA, is_onone(), is_olbl(S.xlbl), is_onone(), is_onone())) return 1;
+    if (S.block && n % S.block == 0) is_muni();     /* whole blocks leave together */
     return is_guard(p, 0);
 }
 
@@ -886,7 +910,14 @@ int is_tile(const kir_t *k, const kir_node_t *tile, const kir_val_t **body)
     if (guard && is_exit(gid, n)) return 1;
     for (i = 0, stride = n; i < na; i++) {
         stride /= ext[i];
-        if (is_dec(gid, ext[i], stride, i == 0, &ax) || is_bset(nm[i], ax)) return 1;
+        if (is_dec(gid, ext[i], stride, i == 0, &ax)) return 1;
+        /* gid / stride is one value across a block when the stride is a
+         * multiple of the block size (blocks start at multiples of it) */
+        if (ext[i] == 1 || stride % k->block[0] == 0) {
+            if (is_bsetu(nm[i], ax)) return 1;
+        } else if (is_bset(nm[i], ax)) {
+            return 1;
+        }
     }
     return is_lw(k, tid);
 }
@@ -1104,7 +1135,7 @@ static int is_let(is_wk_t *w, const kir_node_t *nd)
     } else {
         dst = v;
     }
-    return is_bset(nm->ref, dst);
+    return kx_uni(vl) ? is_bsetu(nm->ref, dst) : is_bset(nm->ref, dst);
 }
 
 /* Write(output, index, values, value_dtype, atomic, swizzle): value i goes
@@ -1371,6 +1402,7 @@ static int is_sloop(is_wk_t *w, const kir_node_t *nd)
     nv_opnd_t home, s, p, bnd, pv;
     uint32_t ax = 0, ltop = 0, lend = 0;
     int32_t ext = 0;
+    int uni;
 
     if (!st || !sp || !bd) return er_fail(E015, "a StridedLoop missing start, step or body");
     if (bd->tag != KV_LIST) return er_fail(E015, "a StridedLoop whose body is not a list");
@@ -1383,15 +1415,19 @@ static int is_sloop(is_wk_t *w, const kir_node_t *nd)
     } else {
         bnd = is_oimm(ext);
     }
+    /* the same trip count in every thread of the block only when start,
+     * step and bound are; a barrier in the body is allowed only then */
+    uni = kx_uni(st) && kx_uni(sp) && (!en || en->tag == KV_NONE || kx_uni(en));
     if (is_sseed(nd, ax)) return 1;
     if (is_lbl(&ltop) || is_lbl(&lend)) return 1;
     if (is_wvisit(w, bd, IC_LOOP, 1, nd, ltop, lend)) return 1;
-    if (rg_home(ax, RF_R, &home) || is_bset(ax, home)) return 1;
+    if (rg_home(ax, RF_R, &home) || (uni ? is_bsetu(ax, home) : is_bset(ax, home))) return 1;
     if (is_ins(NV_MOV_S32, home, s, is_onone(), is_onone())) return 1;
     if (is_ins(NV_LABEL, is_olbl(ltop), is_onone(), is_onone(), is_onone())) return 1;
     if (rg_new(RF_P, &pv)) return 1;
     if (is_ins(NV_SETP_GE_S32, pv, home, bnd, is_onone())) return 1;
     if (is_ins(NV_BRA, is_onone(), is_olbl(lend), is_onone(), is_onone())) return 1;
+    if (uni) is_muni();
     return is_guard(pv, 0);
 }
 
@@ -1724,6 +1760,7 @@ static int is_tree(is_wk_t *w, const kir_node_t *nd)
     if (is_ins(NV_LABEL, is_olbl(ltop), is_onone(), is_onone(), is_onone())) return 1;
     if (is_ins(NV_SETP_LT_S32, pv, rlen, is_oimm(1), is_onone())) return 1;
     if (is_ins(NV_BRA, is_onone(), is_olbl(lend), is_onone(), is_onone())) return 1;
+    is_muni();                          /* len/2 halving to 0: the same trip count everywhere */
     if (is_guard(pv, 0)) return 1;
     if (is_ins(NV_SETP_LT_S32, pq, tid, rlen, is_onone())) return 1;
     if (is_ins(NV_BRA, is_onone(), is_olbl(lskip), is_onone(), is_onone())) return 1;
@@ -1755,12 +1792,13 @@ static int is_loop(is_wk_t *w, const kir_node_t *nd)
     if (is_sseed(nd, ax)) return 1;
     if (is_lbl(&ltop) || is_lbl(&lend)) return 1;
     if (is_wvisit(w, bd, IC_LOOP, 1, nd, ltop, lend)) return 1;
-    if (rg_home(ax, RF_R, &home) || is_bset(ax, home)) return 1;
+    if (rg_home(ax, RF_R, &home) || is_bsetu(ax, home)) return 1;     /* 0 .. ext: uniform */
     if (is_ins(NV_MOV_S32, home, is_oimm(0), is_onone(), is_onone())) return 1;
     if (is_ins(NV_LABEL, is_olbl(ltop), is_onone(), is_onone(), is_onone())) return 1;
     if (rg_new(RF_P, &pv)) return 1;
     if (is_ins(NV_SETP_GE_S32, pv, home, is_oimm(ext), is_onone())) return 1;
     if (is_ins(NV_BRA, is_onone(), is_olbl(lend), is_onone(), is_onone())) return 1;
+    is_muni();
     return is_guard(pv, 0);
 }
 static int is_init(is_wk_t *w, const kir_node_t *nd)

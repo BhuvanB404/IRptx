@@ -48,6 +48,7 @@ static const er_ent_t ER_TAB[] = {
     /* E060-E079: verify */
     { E060, "label undefined or defined twice" },
     { E061, "non-ASCII byte in the module" },
+    { E062, "barrier or shuffle in a loop whose trip count may differ between threads of a block" },
     { E079, "verify: other failed check (reserved)" },
     /* E080-E099: limits */
     { E080, "input larger than IR_MAX_KIR" },

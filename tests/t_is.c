@@ -677,3 +677,60 @@ static void is39(void)
     PASS();
 }
 TH_REG("is", 39, "a two-state TreeHalve folds both buffers and broadcasts buf[j][0]", is39)
+
+/* ---- Barriers in loops ---- */
+
+/* Run the verifier over what is_run left; its E-code, or 0. */
+static int is_vf(void)
+{
+    int rc;
+
+    th_cap_on();
+    rc = vf_run();
+    th_cap_off(ie, sizeof ie);
+    return rc ? (ie[7] - '0') * 100 + (ie[8] - '0') * 10 + (ie[9] - '0') : 0;
+}
+
+#define SYNLOOP(st) SL(AXR("a1", 500), st, LIT(128), LD("p", A0, "dt:f32") SYN(0))
+
+/* A loop from the thread's own index: the trip count differs, so the Sync
+ * in its body would hang the block. A loop from a literal, or from a block
+ * axis, runs the same trips everywhere and may hold one. */
+static void is40(void)
+{
+    CHEQ(is_gox(XINR, SYNLOOP(A0), 128, 128), 0);
+    CHEQ(is_vf(), 62);
+    CHEQ(is_gox(XINR, SYNLOOP(LIT(0)), 128, 128), 0);
+    CHEQ(is_vf(), 0);
+    CHEQ(is_gox(XINR, "(Loop axis=" AXR("j", 4) " body=[" SYN(0) "] unroll=false seed=true)",
+        128, 128), 0);
+    CHEQ(is_vf(), 0);
+    PASS();
+}
+TH_REG("is", 40, "a Sync in a StridedLoop of thread-varying start is E062; literal starts and Loops pass", is40)
+
+/* Uniformity follows names: a block-level axis and a Let of one are
+ * uniform, the thread's own axis is not. Two axes over a block of 32: a0
+ * (stride 32) is the block's, a1 (stride 1) the thread's. */
+static void is41(void)
+{
+    static char k2[2048];
+    const char *hd = "kir 1\nkernel k\nlaunch 4 1 1 32 1 1 0\n" XINR "body\n"
+        "[(Tile axes=[" "(Axis name=\"a0\" extent=(Dim expr=" LIT(4) " hint=none) window=none) "
+        "(Axis name=\"a1\" extent=(Dim expr=" LIT(32) " hint=none) window=none)] body=[%s] "
+        "block_threads=32 aux_threads=0 raster_axes=none raster_group=none raster_orient=\"m\")]\nend\n";
+    const char *ok = LET("s", A0, "dt:int") SL(AXR("i", 64), "(Var name=\"s\")", LIT(8), SYN(0));
+    const char *bad = SL(AXR("i", 64), A1V, LIT(8), SYN(0));
+
+    snprintf(k2, sizeof k2, hd, ok);
+    CHEQ(kr_load(k2, strlen(k2)), 0);
+    CHEQ(is_run(kr_get()), 0);
+    CHEQ(is_vf(), 0);
+    snprintf(k2, sizeof k2, hd, bad);
+    CHEQ(kr_load(k2, strlen(k2)), 0);
+    CHEQ(is_run(kr_get()), 0);
+    CHEQ(is_vf(), 62);
+    PASS();
+}
+TH_REG("is", 41, "a loop from a block-level axis (or a Let of one) may hold a Sync; from the thread axis it is E062", is41)
+

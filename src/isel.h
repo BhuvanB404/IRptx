@@ -48,8 +48,15 @@ int is_pop(void);
  * binding table is full. */
 int is_bset(uint32_t name, nv_opnd_t opd);
 
+/* is_bset for a value known to be the same in every thread of a block. */
+int is_bsetu(uint32_t name, nv_opnd_t opd);
+
 /* Newest-first lookup. Returns 0 and sets *out, or E022 naming the name. */
 int is_find(uint32_t name, nv_opnd_t *out);
+
+/* 1 when the newest binding of `name` was made by is_bsetu, else 0 (also for
+ * a name that is not bound). Silent. */
+int is_funi(uint32_t name);
 
 /* ---- Accumulators ---- */
 

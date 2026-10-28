@@ -231,12 +231,15 @@ typedef struct {
     nv_opnd_t prd;                  /* optional guard predicate, @%p or @!%p */
     uint8_t   pneg;
     uint32_t  cmt;                  /* optional `// IR:` comment, string offset, 0 = none */
+    uint8_t   uni;                  /* NV_BRA: a loop exit whose trip count isel proved
+                                     * the same for every thread of a block */
 } nv_ins_t;
 
 /* One live name binding: an IR name (string offset) to an operand. */
 typedef struct {
     uint32_t  name;
     nv_opnd_t opd;
+    uint8_t   uni;                  /* 1: the value is the same in every thread of a block */
 } is_bind_t;
 
 /* One accumulator, bound once to a home register for its whole life. */
@@ -309,6 +312,7 @@ typedef struct {
 /* verify */
 #define E060 60
 #define E061 61
+#define E062 62
 #define E079 79
 /* limits */
 #define E080 80

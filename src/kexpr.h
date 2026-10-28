@@ -34,4 +34,10 @@ int kx_fold(const kir_val_t *e, int32_t *val, int *isc);
  * printed. */
 int kx_aff(const kir_val_t *e, kx_aff_t *out);
 
+/* 1 when `e` is the same value in every thread of a block: every name it
+ * reads is bound with is_bsetu (block-level axes, loop variables of such
+ * loops, Lets of such values) and the rest are literals. 0 otherwise, and
+ * for anything malformed; silent. */
+int kx_uni(const kir_val_t *e);
+
 #endif /* KEXPR_H */
