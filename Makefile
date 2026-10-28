@@ -55,3 +55,13 @@ clean:
 	rm -rf build bin/trunner
 
 .PHONY: all static test rules clean
+
+# Generality guards (tests/): held-out kernels, open-set names and sizes in src/ and fe/,
+# and PTX that must not change when every name does.
+generalize:
+	bash tests/generalize.sh
+hardcode:
+	bash tests/hardcode.sh
+rename:
+	$(PY) tests/rename.py
+.PHONY: generalize hardcode rename
