@@ -43,7 +43,7 @@ What was missing was two rules the spec had already written down.
 ## irptx 0.1.0
 
 Ten of the fifteen open problems now pass on the runner: every pointwise kernel,
-every reduction, and two of the three fused ones. The compiler is a C99 core in
+every reduction, and two of the three fused ones. The compiler is a C99 core behind a Python front end that reads the IR and writes
 it back out as text, so the whole lowering is in `src/` and a reviewer can read
 it without reading any Python. That reaches the hackathon's MVP bar (categories 1
 and 2) and a little past it. Everything below this line is what it took.
@@ -57,11 +57,13 @@ and 2) and a little past it. Everything below this line is what it took.
   against all 15 open problems, about 45 ptxas test kernels, a rules
   traceability table and a re-plan (Bhuvan B, 2026-10-24)
 
+- a house style: defensive rules,
   short prefixed names, why-comments with `# ---- Section ----` headers, ASCII
   only with no em dashes, E-coded refusals, plain-English lower-case commit
   subjects, `0.x` versions per category milestone, and this changelog
   (Bhuvan B, 2026-10-25)
 
+- the compiler core moves to C99, behind a thin
   Python front end that only loads the IR and writes it as KIR text. The
   core ships as a static x86-64 Linux binary, `bin/irptx`, with a one-time
   build from source as the fallback (Bhuvan B, 2026-10-25)

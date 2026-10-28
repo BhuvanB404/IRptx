@@ -1,6 +1,7 @@
 # irptx architecture
 
 Status: written (T049). The "PTX idioms" section was written first, from the
+hackathon's worked example (T008); the rest follows the code as
 it stands at `irptx 0.1.0`.
 
 ## Pipeline
@@ -390,18 +391,3 @@ a shared-memory tree step, two barriers). It was assembled with:
 
 and the hackathon example also assembles on both targets.
 
-
-driver file `nv_be.c` registers a table of function pointers (`isel`,
-`emit`, option parsing) and runs them in order. The `isel` step
-(`isel.c`, `nv_compile`) walks the compiler's SSA IR and produces a
-PTX-shaped machine module in memory: virtual registers, instructions as
-data, no text yet. It leaves register allocation to ptxas. A separate
-check pass (`verify.c`, `nv_vchk`) runs over that machine module and
-rejects bad register classes or malformed calls before any output exists;
-a failure there aborts the compile. Only then does `emit.c` print the
-machine module as PTX text (header, per-function declarations, each
-instruction, globals). The split gives three properties irptx wants:
-selection logic that never formats strings, a verifier that sees the exact
-form being printed, and an emitter that is a dumb printer. irptx mirrors
-this as kir -> isel -> verify -> emit, with the Kernel IR loader (kir) in
-copied.

@@ -90,8 +90,7 @@ invited to review.
 House style
 -----------
 
-a from-scratch C99 CUDA compiler with no LLVM in it: defensive rules, short
-prefixed names, comments that say why, ASCII only, and an E-code for every
+The C core is written in a defensive C99 style: short prefixed names, comments that say why, ASCII only, and an E-code for every
 refusal. `make rules` holds the code to them.
 
 ```bash
