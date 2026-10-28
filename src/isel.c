@@ -1702,7 +1702,14 @@ static int is_shstep(is_wk_t *w, const is_ws_t *x, uint32_t half, nv_opnd_t mask
 /* WarpShuffle(state, state_b, combine_states, length, dtype): halve the
  * length from length/2 down to 1, shuffling and combining at each step. Five
  * steps cover a warp, and the guard makes that a hard bound rather than a
- * promise (R9). */
+ * promise.
+ *
+ * The member mask is 0xffffffff, not activemask. Emmy's reference takes
+ * activemask because it may launch a partial warp; here every lane of every
+ * warp is provably present and converged at the shuffle: the block is whole
+ * warps (checked below), surplus threads leave in whole blocks whenever the
+ * body has a shuffle (is_pol), and verify refuses a shuffle under any
+ * divergent branch, guard, or loop of thread-varying trip count. */
 static int is_shfl(is_wk_t *w, const kir_node_t *nd)
 {
     is_ws_t x;
@@ -1718,8 +1725,7 @@ static int is_shfl(is_wk_t *w, const kir_node_t *nd)
         return er_fail(E034, "a warp shuffle whose length is not a power of two up to 32");
     if (S.block == 0 || S.block % TM_WARP != 0)
         return er_fail(E034, "a warp shuffle in a block that is not a multiple of 32");
-    if (rg_new(RF_R, &mask)) return 1;
-    if (is_ins(NV_ACTIVEMASK, mask, is_onone(), is_onone(), is_onone())) return 1;
+    mask = is_oimm(-1);
     for (half = (uint32_t)len / 2u; half >= 1u && g--; half /= 2u)
         if (is_shstep(w, &x, half, mask)) return 1;
     return 0;

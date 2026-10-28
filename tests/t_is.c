@@ -558,12 +558,13 @@ static void is32(void)
     for (i = 0; i < 5u; i++) {
         h = is_nth(NV_SHFL_BFLY, i);
         CHECK(h && h->src[1].kind == OP_IMM && h->src[1].v == (16u >> i));
-        CHECK(h && h->src[2].v == 31u && h->src[3].kind == OP_REG);
+        CHECK(h && h->src[2].v == 31u && h->src[3].kind == OP_IMM && h->src[3].v == 0xFFFFFFFFu);
     }
+    CHEQ(is_cnt(NV_ACTIVEMASK), 0u);       /* whole warps, converged: the full mask */
     CHEQ(is_cnt(NV_ADD_RN_F32), 6u);       /* the Accum, then one combine per step */
     PASS();
 }
-TH_REG("is", 32, "a WarpShuffle of 32 halves the offset 16..1, shuffling then combining", is32)
+TH_REG("is", 32, "a WarpShuffle of 32 halves the offset 16..1 under the full mask, shuffling then combining", is32)
 
 static void is33(void)
 {
