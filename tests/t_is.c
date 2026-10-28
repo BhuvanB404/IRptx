@@ -734,3 +734,45 @@ static void is41(void)
 }
 TH_REG("is", 41, "a loop from a block-level axis (or a Let of one) may hold a Sync; from the thread axis it is E062", is41)
 
+
+/* ---- StridedLoop steps and bounds ---- */
+
+#define SLS(sp) SL(AXR("a1", 64), A0, sp, LD("p", A1V, "dt:f32"))
+#define SLE(n, en) "(StridedLoop axis=" AXR("a1", n) " start=" A0 " step=" LIT(8) \
+    " body=[" LD("p", A1V, "dt:f32") "] unroll=false end=" en " seed=true)"
+
+/* The exit test is `i >= bound`, so only a positive constant step ends. */
+static void is42(void)
+{
+    CHEQ(is_gox(XINR, SLS(LIT(-8)), 8, 8), 1);
+    CHECK(strncmp(ie, "error[E026]", 11) == 0);
+    CHEQ(is_gox(XINR, SLS(LIT(0)), 8, 8), 1);
+    CHECK(strncmp(ie, "error[E026]", 11) == 0);
+    CHEQ(is_gox(XINR, SLS(A0), 8, 8), 1);
+    CHECK(strncmp(ie, "error[E026]", 11) == 0);
+    CHEQ(is_cnt(NV_LABEL), 0u);            /* refused before any loop record */
+    CHEQ(is_gox(XINR, SLS("(BinaryExpr op=\"*\" left=" LIT(2) " right=" LIT(4) ")"), 8, 8), 0);
+    CHECK(is_nth(NV_ADD_S32, 0) && is_nth(NV_ADD_S32, 0)->src[1].kind == OP_IMM);
+    CHECK(is_nth(NV_ADD_S32, 0)->src[1].v == 8u);
+    PASS();
+}
+TH_REG("is", 42, "a StridedLoop step that is negative, zero or not a constant is E026; 2*4 folds to 8", is42)
+
+/* The bound is min(end, extent), and the last step must stay in s32. */
+static void is43(void)
+{
+    const nv_ins_t *s;
+
+    CHEQ(is_gox(XINR, SLE(64, LIT(100)), 8, 8), 0);       /* past the extent: clamped */
+    s = is_nth(NV_SETP_GE_S32, 0);
+    CHECK(s && s->src[1].kind == OP_IMM && s->src[1].v == 64u);
+    CHEQ(is_gox(XINR, SLE(64, LIT(40)), 8, 8), 0);
+    s = is_nth(NV_SETP_GE_S32, 0);
+    CHECK(s && s->src[1].kind == OP_IMM && s->src[1].v == 40u);
+    CHEQ(is_gox(XINR, SLE(64, A0), 8, 8), 0);              /* a register end: min.s32 */
+    CHEQ(is_cnt(NV_MIN_S32), 1u);
+    CHEQ(is_gox(XINR, SL(AXR("a1", 2147483647), A0, LIT(8), ""), 8, 8), 1);
+    CHECK(strncmp(ie, "error[E059]", 11) == 0);
+    PASS();
+}
+TH_REG("is", 43, "a StridedLoop bound is min(end, extent), and a step past s32 at the end is E059", is43)

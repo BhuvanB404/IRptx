@@ -122,6 +122,7 @@ static const em_ent_t EM_TAB[] = {
     [NV_ADD_S32] = G("add.s32"), [NV_SUB_S32] = G("sub.s32"),
     [NV_MUL_LO_S32] = G("mul.lo.s32"), [NV_MAD_LO_S32] = G("mad.lo.s32"),
     [NV_MUL_WIDE_S32] = G("mul.wide.s32"), [NV_ADD_S64] = G("add.s64"),
+    [NV_MIN_S32] = G("min.s32"),
     [NV_DIV_S32] = G("div.s32"), [NV_REM_S32] = G("rem.s32"),
     [NV_DIV_U32] = G("div.u32"), [NV_REM_U32] = G("rem.u32"),
     [NV_AND_B32] = G("and.b32"), [NV_OR_B32] = G("or.b32"), [NV_XOR_B32] = G("xor.b32"),

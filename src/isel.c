@@ -1395,29 +1395,59 @@ static int is_lax(const kir_node_t *nd, uint32_t *nm, int32_t *ext)
  *   bra L_top; L_done:
  * `unroll` is a scheduling hint: the loop is correct either way and the
  * generated kernel's speed is only the last tiebreak. */
+
+/* The step: a constant above 0, or E026. The `i >= bound` exit only stops a
+ * loop that counts up, and a step held in a register could be zero or
+ * negative and spin forever. The bound is at most the extent (is_sbnd),
+ * so the last `i += step` stays in s32 when extent - 1 + step does. */
+static int is_sstep(const kir_val_t *sp, int32_t ext, int32_t *stp)
+{
+    int isc = 0;
+
+    if (kx_fold(sp, stp, &isc)) return 1;
+    if (!isc || *stp < 1) return er_fail(E026, "a StridedLoop whose step is not a constant above 0");
+    if ((int64_t)ext - 1 + *stp > INT32_MAX)
+        return er_fail(E059, "a StridedLoop whose last step would pass s32");
+    return 0;
+}
+
+/* The bound: the extent, or `end` when the IR gives one. Emmy promises end
+ * never exceeds the extent; min(end, extent) keeps that true here rather
+ * than trusting it, since is_sstep's overflow proof rests on it. */
+static int is_sbnd(const kir_val_t *en, int32_t ext, nv_opnd_t *bnd)
+{
+    nv_opnd_t e;
+
+    *bnd = is_oimm(ext);
+    if (!en || en->tag == KV_NONE) return 0;
+    if (kx_eval(en, &e)) return 1;
+    if (!mm_ints(e)) return er_fail(E059, "a StridedLoop whose end is not an integer");
+    if (e.kind == OP_IMM) {
+        if ((int32_t)e.v < ext) *bnd = e;
+        return 0;
+    }
+    if (rg_new(RF_R, bnd)) return 1;
+    return is_ins(NV_MIN_S32, *bnd, e, is_oimm(ext), is_onone());
+}
+
 static int is_sloop(is_wk_t *w, const kir_node_t *nd)
 {
     const kir_val_t *st = kr_fld(nd, "start"), *sp = kr_fld(nd, "step");
     const kir_val_t *bd = kr_fld(nd, "body"), *en = kr_fld(nd, "end");
-    nv_opnd_t home, s, p, bnd, pv;
+    nv_opnd_t home, s, bnd, pv;
     uint32_t ax = 0, ltop = 0, lend = 0;
-    int32_t ext = 0;
+    int32_t ext = 0, stp = 0;
     int uni;
 
     if (!st || !sp || !bd) return er_fail(E015, "a StridedLoop missing start, step or body");
     if (bd->tag != KV_LIST) return er_fail(E015, "a StridedLoop whose body is not a list");
-    if (is_lax(nd, &ax, &ext)) return 1;
-    if (kx_eval(st, &s) || kx_eval(sp, &p)) return 1;
-    if (!mm_ints(p)) return er_fail(E059, "a StridedLoop whose step is not an integer");
-    if (p.kind == OP_IMM && p.v == 0) return er_fail(E059, "a StridedLoop whose step is zero");
-    if (en && en->tag != KV_NONE) {
-        if (kx_eval(en, &bnd)) return 1;
-    } else {
-        bnd = is_oimm(ext);
-    }
-    /* the same trip count in every thread of the block only when start,
-     * step and bound are; a barrier in the body is allowed only then */
-    uni = kx_uni(st) && kx_uni(sp) && (!en || en->tag == KV_NONE || kx_uni(en));
+    if (is_lax(nd, &ax, &ext) || is_sstep(sp, ext, &stp)) return 1;
+    if (kx_eval(st, &s)) return 1;
+    if (!mm_ints(s)) return er_fail(E059, "a StridedLoop whose start is not an integer");
+    if (is_sbnd(en, ext, &bnd)) return 1;
+    /* the same trip count in every thread of the block only when start and
+     * bound are (the step is a constant); a barrier in the body needs that */
+    uni = kx_uni(st) && (!en || en->tag == KV_NONE || kx_uni(en));
     if (is_sseed(nd, ax)) return 1;
     if (is_lbl(&ltop) || is_lbl(&lend)) return 1;
     if (is_wvisit(w, bd, IC_LOOP, 1, nd, ltop, lend)) return 1;
@@ -1433,8 +1463,7 @@ static int is_sloop(is_wk_t *w, const kir_node_t *nd)
 
 /* The back edge of a StridedLoop: step the loop variable in its home
  * register, then close the loop. The variable's binding is still open here.
- * A zero step can only come from a register, and there is no static check
- * for that; the guard the walk carries is what keeps it from hanging. */
+ * is_sloop has already proved the step a constant above 0. */
 static int is_cloop(const is_frm_t *f)
 {
     const kir_val_t *ax = kr_fld(f->nd, "axis");
@@ -1448,9 +1477,11 @@ static int is_cloop(const is_frm_t *f)
         if (is_ins(NV_ADD_S32, home, home, is_oimm(1), is_onone())) return 1;
     } else {
         const kir_val_t *sp = kr_fld(f->nd, "step");
-        nv_opnd_t stp;
-        if (kx_eval(sp, &stp)) return 1;
-        if (is_ins(NV_ADD_S32, home, home, stp, is_onone())) return 1;
+        int32_t stp = 0;
+        int isc = 0;
+        if (kx_fold(sp, &stp, &isc)) return 1;
+        if (!isc) return er_fail(E000, "a StridedLoop step that stopped being a constant");
+        if (is_ins(NV_ADD_S32, home, home, is_oimm(stp), is_onone())) return 1;
     }
     if (is_ins(NV_BRA, is_onone(), is_olbl(f->a), is_onone(), is_onone())) return 1;
     return is_ins(NV_LABEL, is_olbl(f->b), is_onone(), is_onone(), is_onone());
