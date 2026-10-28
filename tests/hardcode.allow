@@ -1,0 +1,9 @@
+# Exceptions for tests/hardcode.sh: <path> <token> <text the line must contain>  # reason
+# Only fixed capacities qualify (arena and buffer sizes chosen for any input). A size that
+# steers a lowering decision never goes here: derive it from the IR instead.
+src/irptx.h 65536  IR_MAX_NODE  # KIR node arena capacity
+src/irptx.h 262144 IR_MAX_FLD   # node field arena capacity
+src/irptx.h 262144 IR_MAX_ITEM  # list element arena capacity
+src/irptx.h 131072 IR_MAX_INS   # instruction record capacity
+src/irptx.h 16384  IR_MAX_BIND  # name binding capacity
+src/main.c  65536  RD_CHUNK     # stdin read chunk
