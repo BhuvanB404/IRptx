@@ -29,8 +29,9 @@ int rg_new(rf_t rf, nv_opnd_t *out);
 
 /* The single home register of `name` in file `rf` (ruling H2). The first call
  * allocates, later calls return the same register, whatever scope they are
- * in. A name asked for in two different files is our bug (E000). E081 when
- * the home table is full. Does not bind the name: use is_bset. */
+ * in. A name asked for in two different files is E029: the IR used one name
+ * for an integer loop variable and an f32 value. E081 when the home table
+ * is full. Does not bind the name: use is_bset. */
 int rg_home(uint32_t name, rf_t rf, nv_opnd_t *out);
 
 /* How many registers file `rf` has handed out (so %r<count+1> declares them). */
@@ -64,8 +65,8 @@ int is_funi(uint32_t name);
  * is_aadd or is_reset. */
 is_acc_t *is_afind(uint32_t name);
 
-/* Register a new accumulator (seeded = 0). E081 when the table is full. A
- * name already present is our bug (E000): callers is_afind first. */
+/* Register a new accumulator (seeded = 0). E081 when the table is full, E028
+ * for a name already present (two Inits, or an Init of an Accum's name). */
 int is_aadd(uint32_t name, nv_opnd_t reg, uint8_t op, uint32_t ident,
             uint8_t has_init, is_acc_t **out);
 

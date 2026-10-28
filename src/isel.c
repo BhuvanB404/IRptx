@@ -75,7 +75,7 @@ int rg_home(uint32_t name, rf_t rf, nv_opnd_t *out)
     for (i = 0; i < S.nhome; i++) {
         if (!is_same(S.home[i].name, name)) continue;
         if (S.home[i].reg.rf != (uint8_t)rf)
-            return er_fail(E000, "a name given homes in two register files");
+            return er_fail(E029, "a name used both as an integer loop variable and as an f32 value");
         *out = S.home[i].reg;
         return 0;
     }
@@ -183,7 +183,7 @@ int is_aadd(uint32_t name, nv_opnd_t reg, uint8_t op, uint32_t ident,
     uint32_t a;
     is_acc_t *p;
 
-    if (is_afind(name)) return er_fail(E000, "an accumulator registered twice");
+    if (is_afind(name)) return er_fail(E028, "an accumulator or Init name declared twice");
     a = IX_PNEW(S.nacc, IR_MAX_ACC);
     if (a == 0) return er_fail(E081, "more accumulators than the table holds");
     p = &S.acc[a - 1u];
@@ -1877,7 +1877,7 @@ static int is_init(is_wk_t *w, const kir_node_t *nd)
     } else {
         return er_fail(E015, "an Init whose identity is not a number");
     }
-    if (is_afind(nm->ref)) return er_fail(E000, "an accumulator registered twice");
+    if (is_afind(nm->ref)) return er_fail(E028, "an Init whose name is already an accumulator");
     if (rg_home(nm->ref, RF_F, &reg)) return 1;
     if (is_aadd(nm->ref, reg, OPN_NONE, bits, 1, &a)) return 1;
     if (is_ins(NV_MOV_F32, a->reg, is_ofim(bits), is_onone(), is_onone())) return 1;

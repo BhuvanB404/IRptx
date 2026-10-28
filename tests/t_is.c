@@ -830,3 +830,22 @@ static void is46(void)
     PASS();
 }
 TH_REG("is", 46, "a shared array whose extents multiply past 64 bits is E059, not a wrapped 0", is46)
+
+/* ---- Input that used to reach E000 ---- */
+
+#define INIT(nm) "(Init name=\"" nm "\" identity=0x0.0p+0f dtype=dt:f32)"
+
+/* Two Inits of one name, and one name as both an f32 accumulator and an
+ * integer loop variable, are the IR's mistakes, not ours: E028 and E029. */
+static void is47(void)
+{
+    CHEQ(is_gox(XIN, INIT("acc") INIT("acc"), 8, 8), 1);
+    CHECK(strncmp(ie, "error[E028]", 11) == 0);
+    CHEQ(is_gox(XIN, LD("p", A0, "dt:f32") ACCX("acc", "p", "add", "\"a1\"") INIT("acc"), 8, 8), 1);
+    CHECK(strncmp(ie, "error[E028]", 11) == 0);
+    CHEQ(is_gox(XIN, LD("p", A0, "dt:f32") ACCX("j", "p", "add", "\"a1\"")
+        "(Loop axis=" AXR("j", 4) " body=[] unroll=false seed=true)", 8, 8), 1);
+    CHECK(strncmp(ie, "error[E029]", 11) == 0);
+    PASS();
+}
+TH_REG("is", 47, "a name declared twice is E028, one name in two register files E029, never E000", is47)

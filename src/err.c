@@ -45,6 +45,8 @@ static const er_ent_t ER_TAB[] = {
     { E025, "launch uses y or z beyond 1" },
     { E026, "StridedLoop step that is not a constant above 0" },
     { E027, "combine_states statement other than an Assign" },
+    { E028, "accumulator or Init name declared twice" },
+    { E029, "one name used for both an integer loop variable and an f32 value" },
     { E034, "warp shuffle whose length is not a power of two" },
     { E059, "isel: other unsupported construct (reserved)" },
     /* E060-E079: verify */
