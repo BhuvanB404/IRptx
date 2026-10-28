@@ -849,3 +849,21 @@ static void is47(void)
     PASS();
 }
 TH_REG("is", 47, "a name declared twice is E028, one name in two register files E029, never E000", is47)
+
+/* A Tile that is the root itself, not a one-item list, is node nnode: nodes
+ * are 1-based, so it is in range and must lower like the wrapped form. */
+static void is48(void)
+{
+    static const char t[] = "kir 1\nkernel k\nlaunch 1 1 1 32 1 1 0\nbody\n(Tile axes=[] body=[])\nend\n";
+    int rc;
+
+    CHEQ(kr_load(t, strlen(t)), 0);
+    CHEQ(kr_get()->root, kr_get()->nnode);
+    th_cap_on();
+    rc = is_run(kr_get());
+    th_cap_off(ie, sizeof ie);
+    CHEQ(rc, 0);
+    CHEQ(is_cnt(NV_RET), 1u);
+    PASS();
+}
+TH_REG("is", 48, "a bare root Tile, the last node of the pool, lowers", is48)

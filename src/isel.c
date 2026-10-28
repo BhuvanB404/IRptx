@@ -691,7 +691,7 @@ static int is_scan(const kir_t *k, const kir_val_t *root, is_tflg_t *f)
 
         if (c->nd) {
             if (c->i >= c->nd->nfld) { sp--; continue; }
-            if (IX_CHK(c->nd->fld0 + c->i, k->nfld))
+            if (IX_CHK(c->nd->fld0 + c->i, k->nfld + 1u))   /* fields are 1-based */
                 return er_fail(E011, "a field index past the field table");
             v = &k->fld[c->nd->fld0 + c->i++].val;
         } else {
@@ -724,7 +724,7 @@ static int is_spre(const kir_t *k, const kir_val_t *root)
 
         if (c->nd) {
             if (c->i >= c->nd->nfld) { sp--; continue; }
-            if (IX_CHK(c->nd->fld0 + c->i, k->nfld))
+            if (IX_CHK(c->nd->fld0 + c->i, k->nfld + 1u))   /* fields are 1-based */
                 return er_fail(E011, "a field index past the field table");
             v = &k->fld[c->nd->fld0 + c->i++].val;
         } else {
@@ -2075,7 +2075,8 @@ int is_run(const kir_t *k)
 
     is_reset();
     if (!k) return er_fail(E000, "a lowering run with no kernel");
-    if (k->root == 0 || IX_CHK(k->root, k->nnode) || k->node[k->root].kind != KR_TILE)
+    /* nodes are 1-based: 1 .. nnode are real, 0 is the sentinel */
+    if (k->root == 0 || IX_CHK(k->root, k->nnode + 1u) || k->node[k->root].kind != KR_TILE)
         return er_fail(E021, "a body that is not exactly one Tile");
     tile = &k->node[k->root];
     if (is_push() || mm_params(k) || is_tile(k, tile, &body)) return 1;
