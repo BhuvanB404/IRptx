@@ -12,9 +12,8 @@
 #define OPF_P1E30  0x7149F2CAu
 #define OPF_N1E30  0xF149F2CAu
 /* ex2 and lg2 are defined in base 2, so the natural ones carry a factor:
- * log2(e) = 1.44269504f, -log2(e) for a sigmoid's exp(-x), ln(2) = 0.69314718f. */
+ * log2(e) = 1.44269504f, ln(2) = 0.69314718f. */
 #define OPF_LOG2E  0x3FB8AA3Bu
-#define OPF_NLOG2E 0xBFB8AA3Bu
 #define OPF_LN2    0x3F317218u
 
 /* One row per opn_t, in enum order. `ident_ok` says whether `ident` counts. */
@@ -77,53 +76,45 @@ int op_ident(opn_t op, uint32_t *bits)
     return 1;
 }
 
-/* The ops that are a sequence rather than one record. Each is written out in
- * plain maths, ex2/lg2 being the base-2 pair PTX has: exp(x) = ex2(x*log2e),
- * ln(x) = lg2(x)*ln2, sigmoid(x) = 1/(1+exp(-x)), softplus = ln(1+exp(x)),
- * siLU = x*sigmoid(x). Both ex2 and lg2 are .approx, which is what the
- * device's own ex2 does anyway. pow is fmath.c's powf. */
+/* The ops that are a sequence rather than one record. exp_fast is the ex2
+ * form Emmy renders as __expf. exp, log, log2, tanh, sin, cos and pow are
+ * the accurate sequences in fmath.c, because Emmy's reference uses expf,
+ * logf, tanhf, sinf, cosf and powf: the .approx forms miss those by far
+ * more than 1e-6 (and lg2.approx near 1 is only good to 2^-22 absolute).
+ * sigmoid, silu and softplus are built on that exp, softplus in the
+ * overflow-free form max(x, 0) + ln(1 + exp(-|x|)) that Emmy decomposes
+ * it into. */
 static int op_seq(opn_t op, nv_opnd_t dst, nv_opnd_t a, nv_opnd_t b)
 {
-    nv_opnd_t none = is_onone(), t, u, v;
+    nv_opnd_t none = is_onone(), t, u;
 
     switch (op) {
-    case OPN_EXP:
-    case OPN_EXP_FAST:              /* exp_fast is the ex2 form, not a slower one */
+    case OPN_EXP:       return fm_exp(dst, a);
+    case OPN_EXP_FAST:
         if (rg_new(RF_F, &t)) return 1;
         if (is_ins(NV_MUL_RN_F32, t, a, is_ofim(OPF_LOG2E), none)) return 1;
         return is_ins(NV_EX2_APPROX_F32, dst, t, none, none);
-    case OPN_LOG:
-        if (rg_new(RF_F, &t)) return 1;
-        if (is_ins(NV_LG2_APPROX_F32, t, a, none, none)) return 1;
-        return is_ins(NV_MUL_RN_F32, dst, t, is_ofim(OPF_LN2), none);
-    case OPN_LOG2:      return is_ins(NV_LG2_APPROX_F32, dst, a, none, none);
+    case OPN_LOG:       return fm_log(dst, a, 1);
+    case OPN_LOG2:      return fm_log(dst, a, 0);
     case OPN_SQRT:      return is_ins(NV_SQRT_RN_F32, dst, a, none, none);
-    case OPN_RSQRT:     return is_ins(NV_RSQRT_APPROX_F32, dst, a, none, none);
+    case OPN_RSQRT:     return is_ins(NV_RSQRT_APPROX_F32, dst, a, none, none);  /* what rsqrtf is */
     case OPN_RECIPROCAL: return is_ins(NV_RCP_RN_F32, dst, a, none, none);
-    case OPN_TANH:      return is_ins(NV_TANH_APPROX_F32, dst, a, none, none);
-    case OPN_SIN:       return is_ins(NV_SIN_APPROX_F32, dst, a, none, none);
-    case OPN_COS:       return is_ins(NV_COS_APPROX_F32, dst, a, none, none);
-    case OPN_SIGMOID:
+    case OPN_TANH:      return fm_tanh(dst, a);
+    case OPN_SIN:       return fm_sin(dst, a, 0);
+    case OPN_COS:       return fm_sin(dst, a, 1);
+    case OPN_POW:       return fm_pow(dst, a, b);
+    case OPN_SIGMOID:               /* 1 / (1 + exp(-x)) */
+    case OPN_SILU:                  /* x / (1 + exp(-x)) */
         if (rg_new(RF_F, &t) || rg_new(RF_F, &u)) return 1;
-        if (is_ins(NV_MUL_RN_F32, t, a, is_ofim(OPF_NLOG2E), none)) return 1;
-        if (is_ins(NV_EX2_APPROX_F32, u, t, none, none)) return 1;
-        if (is_ins(NV_ADD_RN_F32, t, u, is_ofim(OPF_ONE), none)) return 1;
-        return is_ins(NV_RCP_RN_F32, dst, t, none, none);
-    case OPN_SILU:                  /* x * sigmoid(x), so the sigmoid needs its own temp */
-        if (rg_new(RF_F, &t) || rg_new(RF_F, &u) || rg_new(RF_F, &v)) return 1;
-        if (is_ins(NV_MUL_RN_F32, t, a, is_ofim(OPF_NLOG2E), none)) return 1;
-        if (is_ins(NV_EX2_APPROX_F32, u, t, none, none)) return 1;
+        if (is_ins(NV_NEG_F32, t, a, none, none) || fm_exp(u, t)) return 1;
         if (is_ins(NV_ADD_RN_F32, u, u, is_ofim(OPF_ONE), none)) return 1;
-        if (is_ins(NV_RCP_RN_F32, v, u, none, none)) return 1;
-        return is_ins(NV_MUL_RN_F32, dst, a, v, none);
+        return is_ins(NV_DIV_RN_F32, dst, op == OPN_SILU ? a : is_ofim(OPF_ONE), u, none);
     case OPN_SOFTPLUS:
-        if (rg_new(RF_F, &t) || rg_new(RF_F, &u) || rg_new(RF_F, &v)) return 1;
-        if (is_ins(NV_MUL_RN_F32, t, a, is_ofim(OPF_LOG2E), none)) return 1;
-        if (is_ins(NV_EX2_APPROX_F32, u, t, none, none)) return 1;
-        if (is_ins(NV_ADD_RN_F32, v, u, is_ofim(OPF_ONE), none)) return 1;
-        if (is_ins(NV_LG2_APPROX_F32, t, v, none, none)) return 1;
-        return is_ins(NV_MUL_RN_F32, dst, t, is_ofim(OPF_LN2), none);
-    case OPN_POW:       return fm_pow(dst, a, b);   /* powf, not ex2(y * lg2 x) */
+        if (rg_new(RF_F, &t) || rg_new(RF_F, &u)) return 1;
+        if (is_ins(NV_ABS_F32, t, a, none, none) || is_ins(NV_NEG_F32, t, t, none, none)) return 1;
+        if (fm_exp(u, t) || is_ins(NV_ADD_RN_F32, u, u, is_ofim(OPF_ONE), none)) return 1;
+        if (fm_log(u, u, 1) || is_ins(NV_MAX_F32, t, a, is_ofim(OPF_ZERO), none)) return 1;
+        return is_ins(NV_ADD_RN_F32, dst, t, u, none);
     default:
         return er_fail(E000, "op_emit asked for an op that is not in the table");
     }

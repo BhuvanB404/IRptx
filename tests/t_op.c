@@ -201,50 +201,6 @@ static void op07(void)
 }
 TH_REG("op", 7, "op_emit refuses OPN_NONE with E000 and appends nothing", op07)
 
-/* A composite op is a sequence, and dst is written last so an accumulator's
- * home register can be both the destination and an argument. */
-static void op08(void)
-{
-    nv_opnd_t d, a;
-    const nv_ins_t *r;
-    uint32_t n;
-
-    CHEQ(op_fresh(), 0);
-    CHEQ(rg_new(RF_F, &d), 0);
-    CHEQ(rg_new(RF_F, &a), 0);
-    CHEQ(op_emit(OPN_EXP, d, a, d), 0);
-    r = is_recs(&n);
-    CHEQ(n, 2u);
-    CHEQ(r[0].op, NV_MUL_RN_F32);
-    CHECK(r[0].src[1].kind == OP_FIMM && r[0].src[1].v == 0x3FB8AA3Bu);
-    CHEQ(r[1].op, NV_EX2_APPROX_F32);
-    CHECK(r[1].dst.v == d.v && r[1].src[0].v == r[0].dst.v);
-    PASS();
-}
-TH_REG("op", 8, "exp is mul by log2 e then ex2.approx, writing dst last", op08)
-
-static void op09(void)
-{
-    nv_opnd_t d, a;
-    const nv_ins_t *r;
-    uint32_t n;
-
-    CHEQ(op_fresh(), 0);
-    CHEQ(rg_new(RF_F, &d), 0);
-    CHEQ(rg_new(RF_F, &a), 0);
-    CHEQ(op_emit(OPN_SIGMOID, d, a, d), 0);
-    r = is_recs(&n);
-    CHEQ(n, 4u);
-    CHEQ(r[0].op, NV_MUL_RN_F32);
-    CHECK(r[0].src[1].kind == OP_FIMM && r[0].src[1].v == 0xBFB8AA3Bu);
-    CHEQ(r[1].op, NV_EX2_APPROX_F32);
-    CHEQ(r[2].op, NV_ADD_RN_F32);
-    CHEQ(r[3].op, NV_RCP_RN_F32);
-    CHECK(r[3].dst.v == d.v);
-    PASS();
-}
-TH_REG("op", 9, "sigmoid is exp(-x) by ex2, +1, then rcp, into dst", op09)
-
 /* How many records write the f32 register `d`, and whether the last one does. */
 static uint32_t op_writes(nv_opnd_t d, int *last)
 {
@@ -282,6 +238,44 @@ static int op_alias(opn_t op)
     return op_writes(d, &last) == 1u && last ? 0 : 1;
 }
 
+/* A composite op is a sequence, and dst is written last so an accumulator's
+ * home register can be both the destination and an argument. exp keeps
+ * x * log2(e) in two parts (the second an fma by its low half) and calls
+ * ex2.approx once, on the reduced argument. */
+static void op08(void)
+{
+    uint32_t n, i, lo = 0;
+    const nv_ins_t *r;
+
+    CHEQ(op_alias(OPN_EXP), 0);
+    r = is_recs(&n);
+    for (i = 0; i < n; i++)
+        lo += r[i].op == NV_FMA_RN_F32 && r[i].src[1].kind == OP_FIMM && r[i].src[1].v == 0x32A57060u;
+    CHEQ(lo, 1u);
+    CHEQ(op_cnt(NV_EX2_APPROX_F32), 1u);
+    CHEQ(op_cnt(NV_CVT_RNI_F32_F32), 1u);
+    PASS();
+}
+TH_REG("op", 8, "exp splits x * log2 e by an fma, ex2 sees the reduced argument once, dst written last", op08)
+
+static void op09(void)
+{
+    uint32_t n;
+    const nv_ins_t *r;
+
+    CHEQ(op_alias(OPN_SIGMOID), 0);
+    r = is_recs(&n);
+    CHEQ(r[n - 1u].op, NV_DIV_RN_F32);
+    CHECK(r[n - 1u].src[0].kind == OP_FIMM && r[n - 1u].src[0].v == 0x3F800000u);
+    CHEQ(op_cnt(NV_EX2_APPROX_F32), 1u);
+    CHEQ(op_alias(OPN_SILU), 0);
+    r = is_recs(&n);
+    CHEQ(r[n - 1u].op, NV_DIV_RN_F32);
+    CHECK(r[n - 1u].src[0].kind == OP_REG && r[n - 1u].src[0].rf == RF_F);
+    PASS();
+}
+TH_REG("op", 9, "sigmoid is 1 / (1 + exp(-x)) and silu x / (1 + exp(-x)) by div.rn, into dst last", op09)
+
 /* pow is not ex2(y * lg2(x)): log2 |x| in two parts, one ex2 on the reduced
  * exponent, and the special cases settled by a final selp of 1.0. lg2.approx
  * appears only for the 0 / inf / NaN inputs. */
@@ -301,3 +295,41 @@ static void op10(void)
     PASS();
 }
 TH_REG("op", 10, "pow takes log2 |x| in two parts, settles sign and special cases last", op10)
+
+/* sin and cos: Cody-Waite in three fmas, then one guarded branch around the
+ * Payne-Hanek path, whose product is six wide multiplies; no .approx. */
+static void op11(void)
+{
+    uint32_t k;
+
+    for (k = 0; k < 2u; k++) {
+        CHEQ(op_alias(k ? OPN_COS : OPN_SIN), 0);
+        CHEQ(op_cnt(NV_BRA), 1u);
+        CHEQ(op_cnt(NV_LABEL), 1u);
+        CHEQ(op_cnt(NV_MUL_WIDE_U32) + op_cnt(NV_MAD_WIDE_U32), 6u);
+        CHEQ(op_cnt(NV_SHF_R_CLAMP_B32), 2u);
+        CHEQ(op_cnt(NV_EX2_APPROX_F32), 0u);
+        CHEQ(op_vf(), 0);                  /* labels and registers check out */
+    }
+    PASS();
+}
+TH_REG("op", 11, "sin and cos reduce by three fmas and branch around a Payne-Hanek path", op11)
+
+/* tanh: one exp for the large side, a polynomial for the small one, a selp. */
+static void op12(void)
+{
+    uint32_t n;
+    const nv_ins_t *r;
+
+    CHEQ(op_alias(OPN_TANH), 0);
+    r = is_recs(&n);
+    CHEQ(r[n - 1u].op, NV_SELP_F32);
+    CHEQ(op_cnt(NV_EX2_APPROX_F32), 1u);
+    CHEQ(op_cnt(NV_COPYSIGN_F32), 1u);
+    CHEQ(op_alias(OPN_LOG), 0);
+    CHEQ(op_cnt(NV_LG2_APPROX_F32), 1u);   /* only for 0, inf and NaN */
+    CHEQ(op_alias(OPN_LOG2), 0);
+    CHEQ(op_alias(OPN_SOFTPLUS), 0);
+    PASS();
+}
+TH_REG("op", 12, "tanh, log, log2 and softplus write dst last; tanh picks exp or the polynomial", op12)
