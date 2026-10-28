@@ -559,3 +559,16 @@ static void kr37(void)
     PASS();
 }
 TH_REG("kr", 37, "node, field and item counts match the text", kr37)
+
+/* The range is checked on the double, before it is narrowed: narrowing an
+ * out-of-range double to float is undefined, so 2^128 and a value a
+ * hair past FLT_MAX must refuse without ever being converted. */
+static void kr38(void)
+{
+    CHEQ(kr_body("[(L v=0x1p128f)]"), 14);
+    CHEQ(kr_body("[(L v=0x1.fffffe0000001p+127f)]"), 14);
+    CHEQ(kr_body("[(L v=-0x1.fffffep+127f)]"), 0);
+    CHEQ(kr_body("[(L v=0x1p-149f)]"), 0);
+    PASS();
+}
+TH_REG("kr", 38, "a hex float is range-checked as a double before it is narrowed", kr38)

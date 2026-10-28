@@ -197,8 +197,10 @@ static int kr_flt(const char *s, size_t n, uint32_t *bits)
     buf[n - 1u] = '\0';
     d = strtod(buf, &end);
     if (end != buf + (n - 1u)) return er_fail(E014, "a hex float strtod would not take whole");
+    /* range first: narrowing a double outside the float range is undefined
+     * (C99 6.3.1.5), so the check cannot be made on the result */
+    if (d > FLT_MAX || d < -FLT_MAX) return er_fail(E014, "a hex float outside the f32 range");
     f = (float)d;
-    if (f > FLT_MAX || f < -FLT_MAX) return er_fail(E014, "a hex float outside the f32 range");
     memcpy(bits, &f, sizeof *bits);
     return 0;
 }
