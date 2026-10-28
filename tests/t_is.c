@@ -816,3 +816,17 @@ static void is45(void)
     PASS();
 }
 TH_REG("is", 45, "a constant index whose int64 sum would overflow is E059; an ordinary one folds", is45)
+
+/* Four extents of 65536 multiply to 2^64, which wrapped the element count
+ * to 0 and passed; the size is now checked at every multiply. */
+static void is46(void)
+{
+    CHEQ(is_gox(XIN, "(Smem name=\"big\" extents=[" LIT(65536) " " LIT(65536) " " LIT(65536) " "
+        LIT(65536) "] dtype=\"float\" align=0)", 8, 8), 1);
+    CHECK(strncmp(ie, "error[E059]", 11) == 0);
+    CHEQ(is_gox(XIN, "(Smem name=\"ok\" extents=[" LIT(4) " " LIT(8) "] dtype=\"float\" align=0)",
+        8, 8), 0);
+    CHECK(sm_get()->narr == 1u && sm_get()->arr[0].elems == 32u);
+    PASS();
+}
+TH_REG("is", 46, "a shared array whose extents multiply past 64 bits is E059, not a wrapped 0", is46)

@@ -292,6 +292,7 @@ uint32_t is_nlbl(void)
 
 #define MM_ELEM 4                   /* bytes in an f32 element */
 #define MM_STATIC_MAX 49152u        /* static shared limit; past it one pool */
+#define SM_MAX_BYTES  (1u << 30)    /* layout cap, far past any device: keeps sums in 32 bits */
 
 /* Is `o` an s32 value: a %r register or an immediate? */
 static int mm_ints(nv_opnd_t o)
@@ -491,13 +492,17 @@ int sm_add(uint32_t name, const int32_t *dim, uint32_t rank, uint32_t align, uin
 
     if (m->narr >= IR_MAX_SMEM) return er_fail(E081, "more shared arrays than the table holds");
     if (!dim || rank == 0 || rank > IR_MAX_DIM) return er_fail(E059, "a shared array with no extents");
+    /* checked at every multiply: four extents of 65536 make 2^64, which
+     * wraps a uint64 to 0 and would pass any check made after the loop */
     for (i = 0; i < rank; i++) {
         if (dim[i] < 1) return er_fail(E059, "a shared array with an extent below 1");
         elems *= (uint64_t)dim[i];
+        if (elems > SM_MAX_BYTES / MM_ELEM)
+            return er_fail(E059, "a shared array of zero, huge or oddly aligned size");
     }
     off = ((uint64_t)m->total + al - 1u) / al * al;
     end = off + elems * MM_ELEM;
-    if (al > 4096u || (align & (align - 1u)) != 0 || end > (1u << 30))
+    if (al > 4096u || (align & (align - 1u)) != 0 || end > SM_MAX_BYTES)
         return er_fail(E059, "a shared array of zero, huge or oddly aligned size");
     a = &m->arr[m->narr];
     a->name = name;
