@@ -22,7 +22,7 @@
  *     thread of a block takes it together (is_tile refuses a barrier in a
  *     body whose surplus threads are not whole blocks); nor
  *   - a uniform loop exit: the record just before the target label
- *     (comments and nops skipped) is an unguarded branch back to a label
+ *     (nops skipped) is an unguarded branch back to a label
  *     defined before this branch, the shape `L_top: ... @p bra L_done;
  *     ...; bra L_top; L_done:`, AND isel marked the branch `uni` because
  *     it proved the loop's start, step and bound the same in every thread
@@ -100,8 +100,8 @@ static int vf_fill(const nv_ins_t *r, uint32_t n, uint32_t *at)
     return 0;
 }
 
-/* The exit label number: the label right before the final ret (comments and
- * nops skipped), or 0 when the list does not end that way. */
+/* The exit label number: the label right before the final ret (nops
+ * skipped), or 0 when the list does not end that way. */
 static uint32_t vf_exit(const nv_ins_t *r, uint32_t n)
 {
     uint32_t k = n;
@@ -110,7 +110,7 @@ static uint32_t vf_exit(const nv_ins_t *r, uint32_t n)
 
     while (k > 0 && g--) {
         const nv_ins_t *q = &r[--k];
-        if (q->op == NV_COMMENT || q->op == NV_NOP) continue;
+        if (q->op == NV_NOP) continue;
         if (!seen_ret) {
             if (q->op != NV_RET) return 0;
             seen_ret = 1;
@@ -203,7 +203,7 @@ static int vf_lexit(const nv_ins_t *r, uint32_t i, uint32_t j)
 
     while (k > 0 && g--) {
         const nv_ins_t *q = &r[--k];
-        if (q->op == NV_COMMENT || q->op == NV_NOP) continue;
+        if (q->op == NV_NOP) continue;
         if (q->op != NV_BRA || q->prd.kind != OP_NONE || q->src[0].kind != OP_LBL) return 0;
         if (IX_CHK(q->src[0].v, IR_MAX_REG + 1u) || !VF_POS[q->src[0].v]) return 0;
         return VF_POS[q->src[0].v] - 1u < i;

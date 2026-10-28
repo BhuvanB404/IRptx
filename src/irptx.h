@@ -118,14 +118,15 @@ typedef enum {
 
 /* PTX instruction opcodes. They index the mnemonic table in emit.c, and the
  * order here must match it; an unknown value is our bug (E000). Typed
- * variants are separate opcodes so emit never has to guess a suffix. This
- * is the set the audited PTX uses (audit/ptx-tests) plus the ops table. */
+ * variants are separate opcodes so emit never has to guess a suffix. Every
+ * one is emitted somewhere in isel.c, kexpr.c, ops.c or fmath.c; an opcode
+ * nothing emits does not stay here. */
 typedef enum {
     NV_NOP = 0,
-    NV_LABEL, NV_RET, NV_BRA, NV_COMMENT,
+    NV_LABEL, NV_RET, NV_BRA,
     /* moves, params, conversions */
     NV_LD_PARAM_U64, NV_CVTA_TO_GLOBAL, NV_MOV_U32, NV_MOV_B32, NV_MOV_F32,
-    NV_MOV_S32, NV_MOV_U64, NV_CVT_RN_F32_S32, NV_CVT_S32_U32,
+    NV_MOV_S32, NV_CVT_RN_F32_S32,
     NV_CVT_RNI_F32_F32, NV_CVT_RZI_F32_F32, NV_CVT_RZI_S32_F32,
     NV_CVT_U32_U64, NV_CVT_U64_U32, NV_CVT_RN_F32_S64,
     /* memory */
@@ -137,14 +138,14 @@ typedef enum {
     NV_CP_ASYNC_CA, NV_CP_ASYNC_CA8, NV_CP_ASYNC_CG, NV_CP_ASYNC_COMMIT, NV_CP_ASYNC_WAIT,
     /* integer arithmetic */
     NV_ADD_S32, NV_SUB_S32, NV_MUL_LO_S32, NV_MAD_LO_S32, NV_MUL_WIDE_S32,
-    NV_ADD_S64, NV_MIN_S32, NV_DIV_S32, NV_REM_S32, NV_DIV_U32, NV_REM_U32,
+    NV_ADD_S64, NV_MIN_S32, NV_DIV_S32, NV_REM_S32,
     NV_AND_B32, NV_OR_B32, NV_XOR_B32, NV_SHL_B32, NV_SHR_U32, NV_SHR_S32,
     NV_SELP_S32, NV_SELP_F32, NV_NEG_S32,
     NV_MUL_WIDE_U32, NV_MAD_WIDE_U32, NV_SHR_U64, NV_SHL_B64, NV_OR_B64,
     NV_SHF_L_CLAMP_B32, NV_SHF_R_CLAMP_B32,
     /* predicates */
     NV_SETP_EQ_S32, NV_SETP_NE_S32, NV_SETP_LT_S32, NV_SETP_LE_S32,
-    NV_SETP_GT_S32, NV_SETP_GE_S32, NV_SETP_GE_U32, NV_SETP_EQ_U32,
+    NV_SETP_GT_S32, NV_SETP_GE_S32,
     NV_SETP_LT_F32, NV_SETP_GT_F32, NV_SETP_GE_F32, NV_SETP_EQ_F32,
     NV_AND_PRED, NV_OR_PRED, NV_NOT_PRED,
     /* float arithmetic */
@@ -153,7 +154,7 @@ typedef enum {
     NV_MAX_F32, NV_MIN_F32, NV_ABS_F32, NV_NEG_F32, NV_COPYSIGN_F32,
     NV_EX2_APPROX_F32, NV_LG2_APPROX_F32, NV_RSQRT_APPROX_F32,
     /* thread, warp and barrier */
-    NV_MOV_TID_X, NV_MOV_CTAID_X, NV_MOV_NTID_X, NV_MOV_LANEID,
+    NV_MOV_TID_X, NV_MOV_CTAID_X,
     NV_ACTIVEMASK, NV_SHFL_BFLY, NV_BAR_SYNC, NV_BAR_WARP_SYNC,
     NV_NCOUNT                       /* count, keep last */
 } nv_op_t;

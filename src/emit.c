@@ -73,7 +73,7 @@ static void em_hex(uint32_t bits)
 
 typedef enum {
     SH_GEN = 0,                     /* mnemonic, then dst and sources, then tail */
-    SH_NOP, SH_LABEL, SH_COMMENT, SH_BRA, SH_PARAM,
+    SH_NOP, SH_LABEL, SH_BRA, SH_PARAM,
     SH_LD, SH_LDV, SH_ST, SH_STV, SH_CPA
 } em_sh_t;
 
@@ -93,13 +93,11 @@ static const em_ent_t EM_TAB[] = {
     [NV_LABEL] = { NULL, SH_LABEL, 0, NULL },
     [NV_RET] = G("ret"),
     [NV_BRA] = { "bra", SH_BRA, 0, NULL },
-    [NV_COMMENT] = { NULL, SH_COMMENT, 0, NULL },
     [NV_LD_PARAM_U64] = { "ld.param.u64", SH_PARAM, 0, NULL },
     [NV_CVTA_TO_GLOBAL] = G("cvta.to.global.u64"),
     [NV_MOV_U32] = G("mov.u32"), [NV_MOV_B32] = G("mov.b32"),
     [NV_MOV_F32] = G("mov.f32"), [NV_MOV_S32] = G("mov.s32"),
-    [NV_MOV_U64] = G("mov.u64"),
-    [NV_CVT_RN_F32_S32] = G("cvt.rn.f32.s32"), [NV_CVT_S32_U32] = G("cvt.s32.u32"),
+    [NV_CVT_RN_F32_S32] = G("cvt.rn.f32.s32"),
     [NV_CVT_RNI_F32_F32] = G("cvt.rni.f32.f32"), [NV_CVT_RZI_F32_F32] = G("cvt.rzi.f32.f32"),
     [NV_CVT_RZI_S32_F32] = G("cvt.rzi.s32.f32"), [NV_CVT_U32_U64] = G("cvt.u32.u64"),
     [NV_CVT_U64_U32] = G("cvt.u64.u32"), [NV_CVT_RN_F32_S64] = G("cvt.rn.f32.s64"),
@@ -124,7 +122,6 @@ static const em_ent_t EM_TAB[] = {
     [NV_MUL_WIDE_S32] = G("mul.wide.s32"), [NV_ADD_S64] = G("add.s64"),
     [NV_MIN_S32] = G("min.s32"),
     [NV_DIV_S32] = G("div.s32"), [NV_REM_S32] = G("rem.s32"),
-    [NV_DIV_U32] = G("div.u32"), [NV_REM_U32] = G("rem.u32"),
     [NV_AND_B32] = G("and.b32"), [NV_OR_B32] = G("or.b32"), [NV_XOR_B32] = G("xor.b32"),
     [NV_SHL_B32] = G("shl.b32"), [NV_SHR_U32] = G("shr.u32"), [NV_SHR_S32] = G("shr.s32"),
     [NV_SELP_S32] = G("selp.s32"), [NV_SELP_F32] = G("selp.f32"), [NV_NEG_S32] = G("neg.s32"),
@@ -134,7 +131,6 @@ static const em_ent_t EM_TAB[] = {
     [NV_SETP_EQ_S32] = G("setp.eq.s32"), [NV_SETP_NE_S32] = G("setp.ne.s32"),
     [NV_SETP_LT_S32] = G("setp.lt.s32"), [NV_SETP_LE_S32] = G("setp.le.s32"),
     [NV_SETP_GT_S32] = G("setp.gt.s32"), [NV_SETP_GE_S32] = G("setp.ge.s32"),
-    [NV_SETP_GE_U32] = G("setp.ge.u32"), [NV_SETP_EQ_U32] = G("setp.eq.u32"),
     [NV_SETP_LT_F32] = G("setp.lt.f32"), [NV_SETP_GT_F32] = G("setp.gt.f32"),
     [NV_SETP_GE_F32] = G("setp.ge.f32"), [NV_SETP_EQ_F32] = G("setp.eq.f32"),
     [NV_AND_PRED] = G("and.pred"), [NV_OR_PRED] = G("or.pred"), [NV_NOT_PRED] = G("not.pred"),
@@ -148,7 +144,6 @@ static const em_ent_t EM_TAB[] = {
     [NV_EX2_APPROX_F32] = G("ex2.approx.f32"), [NV_LG2_APPROX_F32] = G("lg2.approx.f32"),
     [NV_RSQRT_APPROX_F32] = G("rsqrt.approx.f32"),
     [NV_MOV_TID_X] = GT("mov.u32", "%tid.x"), [NV_MOV_CTAID_X] = GT("mov.u32", "%ctaid.x"),
-    [NV_MOV_NTID_X] = GT("mov.u32", "%ntid.x"), [NV_MOV_LANEID] = GT("mov.u32", "%laneid"),
     [NV_ACTIVEMASK] = G("activemask.b32"), [NV_SHFL_BFLY] = G("shfl.sync.bfly.b32"),
     [NV_BAR_SYNC] = G("bar.sync"), [NV_BAR_WARP_SYNC] = G("bar.warp.sync")
 };
@@ -276,10 +271,6 @@ static void em_ins(const nv_ins_t *r)
     if (e->sh == SH_LABEL) {
         em_opd(&r->dst);
         em_apnd(":\n");
-        return;
-    }
-    if (e->sh == SH_COMMENT) {
-        if (r->cmt) { em_apnd("    // "); em_apnd(kr_str(r->cmt)); em_apnd("\n"); }
         return;
     }
     if (!e->mn) { EM.bad = 1; return; }
