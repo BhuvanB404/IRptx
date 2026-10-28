@@ -441,7 +441,7 @@ static void vf29(void)
 }
 TH_REG("vf", 29, "barriers: a bar.sync after an if/else passes", vf29)
 
-/* ---- E083: size ---- */
+/* ---- Size: the selector's cap, which the verifier relies on ---- */
 
 static void vf30(void)
 {

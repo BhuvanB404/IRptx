@@ -1,15 +1,17 @@
-/* verify.c -- vf_*: ASCII, labels, register bounds, barrier uniformity, size caps.
+/* verify.c -- vf_*: ASCII, labels, register bounds, barrier uniformity.
  *
  * Runs on the instruction records after isel and before anything is printed
  * (ASCII, and so P12: a dash is a non-ASCII byte), P5 (register bounds), P6
- * (labels) and the barrier rule P8 / ruling M7, plus the size caps. P1-P3 and
- * P11 are properties of the text the emitter writes, not of the records.
+ * (labels) and the barrier rule P8 / ruling M7. P1-P3 and P11 are properties
+ * of the text the emitter writes, not of the records. Sizes are not checked
+ * here: is_new stops the record list at IR_MAX_INS (E083) and the emitter's
+ * buffer refuses an oversized module (E084), so no estimate here could add
+ * anything.
  *
  * Codes: E061 non-ASCII, E060 label trouble, E079 for a register out of
  * range or a barrier problem, E062 for a barrier in a loop whose trip count
- * may differ between threads, E083 for too many records (output size, E084,
- * is the emitter's). Each failure prints one line naming the record index
- * and what is wrong.
+ * may differ between threads. Each failure prints one line naming the
+ * record index and what is wrong.
  *
  * Divergent region (vf_bar). Walking the record list, a branch is
  * "divergent" when it carries a guard predicate, goes forward (its label is
@@ -270,18 +272,6 @@ static int vf_bar(void)
     return 0;
 }
 
-/* Record count only. The printed size is the emitter's to enforce: its
- * buffer sets an overflow flag and em_run refuses with E084, so no estimate
- * here can refuse a module the emitter would have printed. */
-static int vf_size(void)
-{
-    uint32_t n;
-
-    (void)is_recs(&n);
-    if (n > IR_MAX_INS) return er_fail(E083, "more than IR_MAX_INS instruction records");
-    return 0;
-}
-
 /* ---- Entry ---- */
 
 int vf_run(void)
@@ -290,6 +280,5 @@ int vf_run(void)
     if (vf_lbl()) return 1;
     if (vf_regs()) return 1;
     if (vf_bar()) return 1;
-    if (vf_size()) return 1;
     return 0;
 }
