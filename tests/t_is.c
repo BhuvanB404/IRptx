@@ -798,3 +798,21 @@ static void is44(void)
     PASS();
 }
 TH_REG("is", 44, "a combine_states holding a loop or a Cond is E027; plain Assigns lower once per step", is44)
+
+/* ---- Overflow in the compiler's own arithmetic ---- */
+
+/* Three -2^31 constants times strides of 2^31 - 1 overflow an int64 sum;
+ * the sum is checked term by term, so this is E059, not undefined
+ * behaviour that happens to land on a refusal. */
+static void is45(void)
+{
+    CHEQ(is_gox("arg 0 x0 in f32 4 1 1 1 2147483647\narg 1 y out f32 1 8\n",
+        "(Load names=[\"v\"] input=\"x0\" index=[" LIT(-2147483648) " " LIT(-2147483648) " "
+        LIT(-2147483648) " " A0 "] dtype=dt:f32)", 8, 8), 1);
+    CHECK(strncmp(ie, "error[E059]", 11) == 0);
+    CHEQ(is_gox("arg 0 x0 in f32 2 4 8\narg 1 y out f32 1 8\n",
+        "(Load names=[\"v\"] input=\"x0\" index=[" LIT(3) " " A0 "] dtype=dt:f32)", 8, 8), 0);
+    CHECK(is_nld(0) && is_nld(0)->src[1].kind == OP_NONE);
+    PASS();
+}
+TH_REG("is", 45, "a constant index whose int64 sum would overflow is E059; an ordinary one folds", is45)

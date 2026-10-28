@@ -370,6 +370,19 @@ static int mm_term(nv_opnd_t r, int64_t stride, nv_opnd_t *acc)
     return 0;
 }
 
+/* *cst += v * stride. v is s32 and the stride at most 2^31 - 1, so the
+ * product fits in 63 bits; the sum is checked before it is made, since a
+ * rank-8 index of extreme constants would otherwise wrap an int64. */
+static int mm_cadd(int64_t *cst, int32_t v, int64_t stride)
+{
+    int64_t p = (int64_t)v * stride;
+
+    if (p > 0 ? *cst > INT64_MAX - p : *cst < INT64_MIN - p)
+        return er_fail(E059, "a constant index outside s32");
+    *cst += p;
+    return 0;
+}
+
 /* One index item: fold it into the constant, or lower it into the sum. */
 static int mm_item(const kir_val_t *it, int64_t stride, int64_t *cst, nv_opnd_t *acc)
 {
@@ -378,10 +391,10 @@ static int mm_item(const kir_val_t *it, int64_t stride, int64_t *cst, nv_opnd_t 
     nv_opnd_t r;
 
     if (kx_fold(it, &v, &isc)) return 1;
-    if (isc) { *cst += (int64_t)v * stride; return 0; }
+    if (isc) return mm_cadd(cst, v, stride);
     if (kx_eval(it, &r)) return 1;
     if (!mm_ints(r)) return er_fail(E059, "an index that is not an integer");
-    if (r.kind == OP_IMM) { *cst += (int64_t)(int32_t)r.v * stride; return 0; }
+    if (r.kind == OP_IMM) return mm_cadd(cst, (int32_t)r.v, stride);
     return mm_term(r, stride, acc);
 }
 
