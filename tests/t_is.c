@@ -776,3 +776,25 @@ static void is43(void)
     PASS();
 }
 TH_REG("is", 43, "a StridedLoop bound is min(end, extent), and a step past s32 at the end is E059", is43)
+
+/* ---- combine_states ---- */
+
+#define CMA "(Assign name=\"acc\" op=op:add args=[\"acc\" \"acc__o\"] dtype=none)"
+#define WSK(cm) LD("p", A0, "dt:f32") ACCX("acc", "p", "add", "\"a1\"") WS(32, cm) \
+    WR("y", A0, "\"acc\"", WOK)
+
+/* A combine is a pure merge program of Assigns. A loop or a Cond inside one
+ * used to be lowered through the walk's single request slot, out of order
+ * (or E000); now it is E027 before any combine record. */
+static void is44(void)
+{
+    CHEQ(is_gox(XINR, WSK("[" SL(AXR("j", 1), LIT(0), LIT(1), CMA) "]"), 32, 32), 1);
+    CHECK(strncmp(ie, "error[E027]", 11) == 0);
+    CHEQ(is_gox(XINR, WSK("[" CND(EQA0, CMA, "") "]"), 32, 32), 1);
+    CHECK(strncmp(ie, "error[E027]", 11) == 0);
+    CHEQ(is_cnt(NV_ADD_RN_F32), 1u);       /* the Accum only */
+    CHEQ(is_gox(XINR, WSK("[" CMA "]"), 32, 32), 0);
+    CHEQ(is_cnt(NV_ADD_RN_F32), 6u);       /* the Accum, then one Assign per step */
+    PASS();
+}
+TH_REG("is", 44, "a combine_states holding a loop or a Cond is E027; plain Assigns lower once per step", is44)

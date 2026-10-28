@@ -1240,10 +1240,6 @@ static int is_wrt(is_wk_t *w, const kir_node_t *nd)
     vec = n > 1u && mm_vec(dim, rank, idx, n) && (!sh || n == 4u);
     return is_sto(val, n, areg, boff, vec, sh);
 }
-/* The walk is below is_close, and a combine_states list is a list of
- * ordinary statements, so the handlers that run one need it declared here. */
-static int is_stmt(is_wk_t *w, const kir_node_t *nd);
-
 /* ---- Accumulators (T037) ---- */
 
 /* The accumulator an Accum statement names, registered on first sight, plus
@@ -1625,8 +1621,13 @@ static int is_shfl1(nv_opnd_t d, nv_opnd_t a, uint32_t half, nv_opnd_t mask)
 
 /* The combine of one shuffle or tree step: the IR's own combine statements
  * when it has them, lowered once per step because one list already names
- * every state, and in a fresh scope so the names it binds die with the step
- * (R9); else each state's accumulator op folded with that state's state_b. */
+ * every state, and in a fresh scope so the names it binds die with the step;
+ * else each state's accumulator op folded with that state's state_b.
+ * Emmy types combine_states as Assigns only (a pure merge program), and
+ * that is all this takes: straight-line code lowered here, in place, with
+ * no call back into the statement walk, so nothing recurses and nothing
+ * can ask the walk for a child list in the middle of a step. Any other
+ * kind is E027. */
 static int is_comb(is_wk_t *w, const is_ws_t *x)
 {
     const kir_node_t *nd;
@@ -1637,12 +1638,15 @@ static int is_comb(is_wk_t *w, const is_ws_t *x)
     int rc = 0;
 
     if (x->cm && x->cm->n) {
-        if (is_push()) return 1;
-        for (i = 0; i < x->cm->n && !rc; i++) {
+        for (i = 0; i < x->cm->n; i++) {
             nd = kr_nod(kr_kid(x->cm, i));
-            rc = nd ? is_stmt(w, nd)
-                    : er_fail(E015, "a combine_states item that is not a statement");
+            if (!nd) return er_fail(E015, "a combine_states item that is not a statement");
+            if (nd->kind != KR_ASSIGN)
+                return er_fail(E027, "a combine_states statement that is not an Assign");
         }
+        if (is_push()) return 1;
+        for (i = 0; i < x->cm->n && !rc; i++)
+            rc = is_asgn(w, kr_nod(kr_kid(x->cm, i)));
         if (is_pop()) return 1;
         return rc;
     }

@@ -308,6 +308,7 @@ typedef struct {
 #define E024 24
 #define E025 25
 #define E026 26
+#define E027 27
 #define E034 34
 #define E059 59
 /* verify */
