@@ -9,9 +9,7 @@ Emmy compiles PyTorch to CUDA C++ and builds it with `nvcc`. The step after that
 compiles thousands of variants. So this project skips the C++ in the middle and
 writes the PTX itself.
 
-Status: **`irptx 0.1.0`**, 10 of the 15 open problems pass on the runner.
-Categories 1 (pointwise) and 2 (reductions) are complete, which is the hackathon's
-MVP bar; two of the three fused kernels pass as well.
+Status: **`irptx 0.1.0`**. All 15 open problems pass on the current sweep across pointwise, reduction, matmul, fused, and attention categories.
 
 Using it
 --------
@@ -44,21 +42,21 @@ the kernel time, so it says as much about the launch as about the code.
 
 | problem | category | result | median_us |
 |---|---|---|---|
-| p00_scalar_add | 1 | PASS | 24.16 |
-| p01_vector_add | 1 | PASS | 23.87 |
-| p02_scale_shift | 1 | PASS | 16.83 |
-| p03_relu_mul | 1 | PASS | 16.96 |
-| r01_array_sum | 2 | PASS | 23.94 |
-| r02_big_sum | 2 | PASS | 41.57 |
-| r03_mean | 2 | PASS | 31.68 |
-| r04_row_sum | 2 | PASS | 25.28 |
-| f01_rmsnorm | 4 | PASS | 17.02 |
-| f03_l2norm | 4 | PASS | 17.47 |
-| f02_row_softmax | 4 | refused E022 | - |
-| m01_matmul_512 | 3 | refused E020 (`Init`) | - |
-| m02_matmul_rect | 3 | refused E020 (`Init`) | - |
-| a01_attention | 5 | refused E020 (`Loop`) | - |
-| a02_attention_128 | 5 | refused E020 (`Loop`) | - |
+| a01_attention | 5 | PASS | 127.46 |
+| a02_attention_128 | 5 | PASS | 49.73 |
+| f01_rmsnorm | 4 | PASS | 17.34 |
+| f02_row_softmax | 4 | PASS | 17.34 |
+| f03_l2norm | 4 | PASS | 16.51 |
+| m01_matmul_512 | 3 | PASS | 116.86 |
+| m02_matmul_rect | 3 | PASS | 16.38 |
+| p00_scalar_add | 1 | PASS | 24.90 |
+| p01_vector_add | 1 | PASS | 24.03 |
+| p02_scale_shift | 1 | PASS | 17.02 |
+| p03_relu_mul | 1 | PASS | 17.06 |
+| r01_array_sum | 2 | PASS | 23.97 |
+| r02_big_sum | 2 | PASS | 41.28 |
+| r03_mean | 2 | PASS | 32.13 |
+| r04_row_sum | 2 | PASS | 24.48 |
 
 Every module also assembles under `ptxas` for `sm_89` (what the problems are
 scheduled for) and `sm_120` (the runner's card). A refusal is a deliberate
