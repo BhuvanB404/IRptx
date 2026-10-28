@@ -4,6 +4,7 @@
 #include "irptx.h"
 #include "isel.h"
 #include "ops.h"
+#include "fmath.h"
 
 /* Exact f32 patterns. 1e30f is 0x7149F2CA; its negation flips the sign bit. */
 #define OPF_ZERO   0x00000000u
@@ -79,8 +80,8 @@ int op_ident(opn_t op, uint32_t *bits)
 /* The ops that are a sequence rather than one record. Each is written out in
  * plain maths, ex2/lg2 being the base-2 pair PTX has: exp(x) = ex2(x*log2e),
  * ln(x) = lg2(x)*ln2, sigmoid(x) = 1/(1+exp(-x)), softplus = ln(1+exp(x)),
- * siLU = x*sigmoid(x), pow(x,y) = ex2(y*lg2(x)). Both ex2 and lg2 are
- * .approx, which is what the device's own ex2 does anyway (R7). */
+ * siLU = x*sigmoid(x). Both ex2 and lg2 are .approx, which is what the
+ * device's own ex2 does anyway. pow is fmath.c's powf. */
 static int op_seq(opn_t op, nv_opnd_t dst, nv_opnd_t a, nv_opnd_t b)
 {
     nv_opnd_t none = is_onone(), t, u, v;
@@ -122,11 +123,7 @@ static int op_seq(opn_t op, nv_opnd_t dst, nv_opnd_t a, nv_opnd_t b)
         if (is_ins(NV_ADD_RN_F32, v, u, is_ofim(OPF_ONE), none)) return 1;
         if (is_ins(NV_LG2_APPROX_F32, t, v, none, none)) return 1;
         return is_ins(NV_MUL_RN_F32, dst, t, is_ofim(OPF_LN2), none);
-    case OPN_POW:                   /* x^y, and NaN for a negative base like exp(y*ln x) */
-        if (rg_new(RF_F, &t) || rg_new(RF_F, &u)) return 1;
-        if (is_ins(NV_LG2_APPROX_F32, t, a, none, none)) return 1;
-        if (is_ins(NV_MUL_RN_F32, u, b, t, none)) return 1;
-        return is_ins(NV_EX2_APPROX_F32, dst, u, none, none);
+    case OPN_POW:       return fm_pow(dst, a, b);   /* powf, not ex2(y * lg2 x) */
     default:
         return er_fail(E000, "op_emit asked for an op that is not in the table");
     }

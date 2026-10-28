@@ -244,3 +244,60 @@ static void op09(void)
     PASS();
 }
 TH_REG("op", 9, "sigmoid is exp(-x) by ex2, +1, then rcp, into dst", op09)
+
+/* How many records write the f32 register `d`, and whether the last one does. */
+static uint32_t op_writes(nv_opnd_t d, int *last)
+{
+    uint32_t n, i, c = 0;
+    const nv_ins_t *r = is_recs(&n);
+
+    *last = 0;
+    for (i = 0; i < n; i++) {
+        if (r[i].dst.kind != OP_REG || r[i].dst.rf != RF_F || r[i].dst.v != d.v) continue;
+        c++;
+        *last = i + 1u == n;
+    }
+    return c;
+}
+
+/* How many records have opcode `op`. */
+static uint32_t op_cnt(nv_op_t op)
+{
+    uint32_t n, i, c = 0;
+    const nv_ins_t *r = is_recs(&n);
+
+    for (i = 0; i < n; i++) c += r[i].op == op;
+    return c;
+}
+
+/* op_emit of `op` with dst aliasing its first argument: 0 when dst is written
+ * exactly once, by the last record, so the argument is never read stale. */
+static int op_alias(opn_t op)
+{
+    nv_opnd_t d, b;
+    int last = 0;
+
+    if (op_fresh() || rg_new(RF_F, &d) || rg_new(RF_F, &b)) return 1;
+    if (op_emit(op, d, d, b)) return 1;
+    return op_writes(d, &last) == 1u && last ? 0 : 1;
+}
+
+/* pow is not ex2(y * lg2(x)): log2 |x| in two parts, one ex2 on the reduced
+ * exponent, and the special cases settled by a final selp of 1.0. lg2.approx
+ * appears only for the 0 / inf / NaN inputs. */
+static void op10(void)
+{
+    uint32_t n;
+    const nv_ins_t *r;
+
+    CHEQ(op_alias(OPN_POW), 0);
+    r = is_recs(&n);
+    CHEQ(r[n - 1u].op, NV_SELP_F32);
+    CHECK(r[n - 1u].src[0].kind == OP_FIMM && r[n - 1u].src[0].v == 0x3F800000u);
+    CHEQ(op_cnt(NV_EX2_APPROX_F32), 1u);
+    CHEQ(op_cnt(NV_LG2_APPROX_F32), 1u);
+    CHEQ(op_cnt(NV_CVT_RZI_F32_F32), 1u);  /* the integer test on y */
+    CHEQ(op_cnt(NV_DIV_RN_F32), 2u);       /* s = (m - 1) / (m + 1), in two parts */
+    PASS();
+}
+TH_REG("op", 10, "pow takes log2 |x| in two parts, settles sign and special cases last", op10)
