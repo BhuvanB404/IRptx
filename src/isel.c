@@ -1,8 +1,9 @@
 /* isel.c -- one lowering per Kernel IR statement.
  *
- * labels, the record array, the scoped name bindings, home registers and the
- * accumulator table. Sections below hold the state helpers; the walk that
- * lowers statements lands in T019 and goes above Entry. */
+ * The selector's state lives here: labels, the record array, the scoped name
+ * bindings, home registers and the accumulator table. The sections below
+ * hold the state helpers, memory addressing, the thread model, the
+ * statement handlers and the explicit-stack walk that drives them. */
 
 #include <string.h>
 #include "irptx.h"
@@ -13,7 +14,8 @@
 
 /* ---- State ---- */
 
-/* A name's single home register (ruling H2). Kept apart from the scoped
+/* A name's single home register: every Accum, Init and loop variable has
+ * one, and a rebind is a mov into it. Kept apart from the scoped
  * bindings: leaving a loop drops its binding but not its register. */
 typedef struct {
     uint32_t  name;
@@ -337,7 +339,7 @@ int mm_arg(uint32_t name, uint32_t *idx)
 }
 
 /* Row-major strides of `dim` into st[]: st[k] = product of dim[k+1..]. Each
- * must stay within s32 or the index math would not be s32 (R6). */
+ * must stay within s32 or the index math, which is all s32, would wrap. */
 static int mm_strides(const int32_t *dim, uint32_t rank, int64_t *st)
 {
     int64_t s = 1;
@@ -430,7 +432,7 @@ int mm_gflat(uint32_t arg, const kir_val_t *idx, nv_opnd_t *out)
 }
 
 /* 1 when a width-`w` (2 or 4) vector access at the flat index of `idx` is
- * provably aligned (ruling M6): every per-dimension index is affine and its
+ * provably aligned: every per-dimension index is affine and its
  * coefficients and constant, times that dimension's stride, are all divisible
  * by `w`. Each term then is, so the sum is, for any value of the variables.
  * The base is 16-byte aligned (cudaMalloc, and shared arrays are placed at
@@ -533,8 +535,9 @@ static int is_shv(uint32_t name, uint32_t *id)
 }
 
 /* One Smem statement: add its array to the layout. A Write can store into a
- * shared array several statements before the Smem that declares it (r01 does
- * exactly that), so this runs in the pre-pass, not in the walk. */
+ * shared array several statements before the Smem that declares it (the
+ * cooperative reductions do exactly that), so this runs in the pre-pass,
+ * not in the walk. */
 static int is_sdecl(const kir_node_t *nd, uint32_t *id)
 {
     const kir_val_t *nm = kr_fld(nd, "name"), *ex = kr_fld(nd, "extents");
@@ -810,7 +813,7 @@ static int is_gid(const kir_t *k, nv_opnd_t *tid, nv_opnd_t *gid)
     return is_ins(NV_MAD_LO_S32, *gid, cta, is_oimm(k->block[0]), *tid);
 }
 
-/* Launch shape and guard policy (audit H4). Surplus threads (gid >= N) exit
+/* Launch shape and guard policy. Surplus threads (gid >= N) exit
  * early. With a barrier in the body they must make up whole blocks, so a
  * block exits all together before any barrier; the test is the same
  * `gid >= N` either way because N is then a multiple of the block size. */
@@ -830,7 +833,8 @@ static int is_pol(const kir_t *k, int64_t n, const is_tflg_t *f, int *guard)
 }
 
 /* With Smem the block-level axes must stay constant inside a block, which
- * holds when some suffix of the extents multiplies to the block size (R4). */
+ * holds when some suffix of the extents multiplies to the block size: then
+ * those axes vary only with tid and the ones before them only with ctaid. */
 static int is_r4(const int32_t *ext, uint32_t na, int32_t block)
 {
     int64_t p = 1;
@@ -996,8 +1000,7 @@ static int is_wpush(is_frm_t *st, uint32_t *sp, const is_frm_t *f)
     return 0;
 }
 
-/* The statement kind named in a refusal. Kinds with no lowering yet (the
- * stubs below) and kinds that never will have one share this message. */
+/* The statement kind named in a refusal, for a kind with no lowering. */
 static int is_nyet(const kir_node_t *nd)
 {
     char msg[IR_MAX_NAME + 64];
@@ -1018,13 +1021,13 @@ static int is_nyet(const kir_node_t *nd)
  * registers bound to the names; name i is element index+i (the KIR's
  * consecutive layout). One name is one scalar load; 2 or 4 names are one
  * `.v2`/`.v4` load into consecutive %f registers when mm_vec proves the
- * access aligned (M6), else that many scalar loads off one address. Any other
+ * access aligned, else that many scalar loads off one address. Any other
  * count is E020. A constant index folds into the address: [%rd+imm], no
  * instruction. Everything is checked before the first record, so a refusal
  * leaves no half-made load. An input that names a shared array loads with
  * ld.shared.f32 instead, flattened against the array's own extents; shared
  * has no .v2 form, so a pair falls back to two scalars. Not lowered here:
- * dtype other than f32 (E024; `none` is the inherited f32, ruling C2) and an
+ * dtype other than f32 (E024; `none` is the inherited f32) and an
  * input that is neither a parameter nor a shared array (E022). */
 #define IS_MAX_VEC 4u
 
@@ -1089,11 +1092,11 @@ static int is_load(is_wk_t *w, const kir_node_t *nd)
 /* ---- Arithmetic ---- */
 
 /* name = op(args): the op comes from the table by its Emmy name, so an op
- * outside it (exp, sqrt, reciprocal until T034) is E021 naming it. Arity must
- * match the arg count (E020); args are names looked up in the bindings
- * (E022); dtype is f32 or none (the inherited f32, ruling C2; E024
- * otherwise). A target that is an accumulator's name writes straight into its
- * home register (H2); anything else gets a fresh %f. */
+ * outside it (erf, say) is E021 naming it. Arity must match the arg count
+ * (E020); args are names looked up in the bindings (E022); dtype is f32 or
+ * none (the inherited f32; E024 otherwise). A target that is an
+ * accumulator's name writes straight into its home register; anything else
+ * gets a fresh %f. */
 static int is_asgn(is_wk_t *w, const kir_node_t *nd)
 {
     const kir_val_t *nm = kr_fld(nd, "name"), *op = kr_fld(nd, "op");
@@ -1159,16 +1162,17 @@ static int is_let(is_wk_t *w, const kir_node_t *nd)
 /* Write(output, index, values, value_dtype, atomic, swizzle): value i goes
  * to element index+i (the KIR's consecutive layout). One value is one
  * `st.global.f32`; 2 or 4 values are one `st.global.v2/v4.f32` when mm_vec
- * proves the access aligned (M6), else that many scalar stores. The vector
+ * proves the access aligned, else that many scalar stores. The vector
  * form needs its values in consecutive %f registers, so unless they already
  * are, each is copied (`mov.f32`) into a fresh run first. The address is
  * computed once and the per-value offset folds into the immediate. An output
  * that names a shared array stores with st.shared.f32, flattened against the
  * array's own extents; an output that is neither an `out` parameter nor a
  * shared array is E022. Every check and every value name lookup comes before
- * the first record. Refused: atomic (E020; T071 lowers red.global.add), a
- * swizzle other than NONE (E020), a value count other than 1, 2 or 4 (E020,
- * the simulator's rule), a value_dtype other than f32 or none (E024). */
+ * the first record. An atomic Write to global memory is one
+ * red.global.add.f32 per value. Refused: an atomic Write to shared memory
+ * (E020), a swizzle other than NONE (E020), a value count other than 1, 2
+ * or 4 (E020), a value_dtype other than f32 or none (E024). */
 /* The stores of one Write: n values from [areg+boff]. `vec` asks for the
  * single vector record, which needs its values in consecutive %f registers,
  * so a run that is not already consecutive is copied into a fresh one first.
@@ -1258,7 +1262,7 @@ static int is_wrt(is_wk_t *w, const kir_node_t *nd)
     vec = n > 1u && mm_vec(dim, rank, idx, n) && (!sh || n == 4u);
     return is_sto(val, n, areg, boff, vec, sh);
 }
-/* ---- Accumulators (T037) ---- */
+/* ---- Accumulators ---- */
 
 /* The accumulator an Accum statement names, registered on first sight, plus
  * the value its first update folds in: the op's identity, or the IR's `base`
@@ -1294,11 +1298,11 @@ static int is_areg(const kir_node_t *nd, is_acc_t **out)
     return 0;
 }
 
-/* is_areg plus the update's left operand (R8.3): the bound `base` name when
- * the IR gives one, else the accumulator's own home register. `base` is a
- * name the body computes for this trip (f02 folds acc1 by exp(old_max-new_max)
- * into it), so it is looked up here, at the Accum statement, and never at
- * seed time. */
+/* is_areg plus the update's left operand: the bound `base` name when the IR
+ * gives one, else the accumulator's own home register. `base` is a name the
+ * body computes for this trip (an online softmax folds its running sum by
+ * exp(old_max - new_max) into it), so it is looked up here, at the Accum
+ * statement, and never at seed time. */
 static int is_afrom(const kir_node_t *nd, is_acc_t **out, nv_opnd_t *src)
 {
     const kir_val_t *bs = kr_fld(nd, "base");
@@ -1315,9 +1319,9 @@ static int is_afrom(const kir_node_t *nd, is_acc_t **out, nv_opnd_t *src)
 }
 
 /* Emit the op's identity into the accumulator's one home register, once, and
- * bind the name where the accumulator is visible. H1: the seed goes down
- * before the loop body runs, not on first sight of the Accum inside it, and
- * it is always the identity (R8.2) whatever `base` says. */
+ * bind the name where the accumulator is visible. The seed goes down before
+ * the loop body runs, not on first sight of the Accum inside it, and it is
+ * always the identity whatever `base` says. */
 static int is_aseed(is_acc_t *a)
 {
     if (a->seeded) return 0;
@@ -1327,7 +1331,7 @@ static int is_aseed(is_acc_t *a)
 }
 
 /* Accum(name, value, op, dtype, axes, base): acc = op(base or acc, value) in
- * the accumulator's home register (H2, R8.3). A loop that owns it has already
+ * the accumulator's home register. A loop that owns it has already
  * seeded it (is_sseed); one that does not gets its identity here, on first
  * sight. */
 static int is_acc(is_wk_t *w, const kir_node_t *nd)
@@ -1344,7 +1348,7 @@ static int is_acc(is_wk_t *w, const kir_node_t *nd)
     return op_emit((opn_t)a->op, a->reg, src, v);
 }
 
-/* ---- Control Flow (T038, T039) ---- */
+/* ---- Control Flow ---- */
 
 /* 1 when `nd`'s axes list names the axis `ax`, or when it has no axes at all
  * (then the innermost enclosing loop owns it). */
@@ -1364,8 +1368,8 @@ static int is_onax(const kir_node_t *nd, uint32_t ax)
 
 /* Seed every accumulator of the loop's immediate body that reduces this axis,
  * before the loop starts. An accumulator inside a loop must not restart each
- * trip, and a combine that reads the state before its Accum statement (f02
- * does) has to find a real value there (research R8, ruling H1). */
+ * trip, and a combine that reads the state before its Accum statement (an
+ * online softmax does) has to find a real value there. */
 static int is_sseed(const kir_node_t *sl, uint32_t ax)
 {
     const kir_val_t *bd = kr_fld(sl, "body"), *sd = kr_fld(sl, "seed");
@@ -1387,7 +1391,7 @@ static int is_sseed(const kir_node_t *sl, uint32_t ax)
 
 /* The axis of a loop statement: its name offset in *nm, its constant extent
  * in *ext. An extent that is not a constant is not something the launch
- * geometry can be checked against, so it refuses (FR-013). */
+ * geometry can be checked against, so it refuses. */
 static int is_lax(const kir_node_t *nd, uint32_t *nm, int32_t *ext)
 {
     const kir_val_t *ax = kr_fld(nd, "axis"), *an, *ex;
@@ -1404,7 +1408,7 @@ static int is_lax(const kir_node_t *nd, uint32_t *nm, int32_t *ext)
 }
 
 /* StridedLoop(axis, start, step, body, unroll, end, seed): one thread strides
- * an axis, shape per contracts/lowering.md:
+ * an axis:
  *   i = start; L_top: setp.ge i, bound; @%p bra L_done; body; i += step;
  *   bra L_top; L_done:
  * `unroll` is a scheduling hint: the loop is correct either way and the
@@ -1504,7 +1508,8 @@ static int is_cloop(const is_frm_t *f)
 /* Cond(cond, body, else_body): @!%p bra L_else; then; bra L_end; L_else:;
  * else; L_end:. Each body gets its own scope. A barrier inside one would
  * strand the threads that took the other way, and verify refuses that shape
- * (P8, ruling M7), so this handler does not test for it twice. */
+ * (a barrier under a divergent branch), so this handler does not test for
+ * it twice. */
 static int is_cond(is_wk_t *w, const kir_node_t *nd)
 {
     const kir_val_t *cd = kr_fld(nd, "cond"), *bd = kr_fld(nd, "body");
@@ -1544,7 +1549,7 @@ static int is_cend(const is_frm_t *f)
     return is_ins(NV_LABEL, is_olbl(f->b), is_onone(), is_onone(), is_onone());
 }
 
-/* ---- Shared memory statements (T040) ---- */
+/* ---- Shared memory statements ---- */
 
 /* Smem(name, extents, dtype, align): the pre-pass already placed it, so the
  * walk only confirms the layout knows the name. Declaring it here would be
@@ -1561,11 +1566,11 @@ static int is_smem(is_wk_t *w, const kir_node_t *nd)
     return 0;
 }
 
-/* ---- Barriers (T041) ---- */
+/* ---- Barriers ---- */
 
 /* Sync(barrier_id, count, warp): bar.sync id[, count]; a warp sync takes this
  * warp's activemask, because the IR does not narrow the set further and
- * verify only excuses bar.warp.sync when its mask comes from there (R11). */
+ * nothing proves the warp converged at an arbitrary Sync. */
 static int is_sync(is_wk_t *w, const kir_node_t *nd)
 {
     const kir_val_t *bi = kr_fld(nd, "barrier_id"), *ct = kr_fld(nd, "count");
@@ -1588,7 +1593,7 @@ static int is_sync(is_wk_t *w, const kir_node_t *nd)
     return is_ins(NV_BAR_WARP_SYNC, is_onone(), mask, is_onone(), is_onone());
 }
 
-/* ---- Warp Ops and Tree (T042, T043) ---- */
+/* ---- Warp Ops and Tree ---- */
 
 /* The three name lists of a warp or tree statement, checked once. `cm` may be
  * empty: then the combine is the accumulator's own op folded with state_b. */
@@ -1746,7 +1751,7 @@ static int is_tid(const kir_val_t *tv, nv_opnd_t *out)
 
 /* One tree step: each thread under the half point loads the upper half's
  * cell out of every state's own buffer, combines, and writes its own cell
- * back, so the next step halves all of them at once (R10). `tid + rlen` is
+ * back, so the next step halves all of them at once. `tid + rlen` is
  * computed once and reused as each buffer's upper index. */
 static int is_tstep(is_wk_t *w, const is_ws_t *x, const uint32_t *ids,
                     nv_opnd_t tid, nv_opnd_t rlen)
@@ -1778,7 +1783,7 @@ static int is_tstep(is_wk_t *w, const is_ws_t *x, const uint32_t *ids,
 /* TreeHalve(bufs, state, state_b, combine_states, length, tid_var, dtype,
  * barrier_id, barrier_count, inner): fold the partials of bufs[0] by halving,
  * with one barrier after each step and outside its predicate, so no thread
- * waits for one that branched away (R10). When the loop ends buf[0] holds the
+ * waits for one that branched away. When the loop ends buf[0] holds the
  * total and every state is loaded from it, since the IR may write from any
  * thread afterwards. */
 static int is_tree(is_wk_t *w, const kir_node_t *nd)
@@ -1838,7 +1843,11 @@ static int is_tree(is_wk_t *w, const kir_node_t *nd)
     return 0;
 }
 
-/* ---- Statement kinds not lowered yet ---- */
+/* ---- Loop, Init and cp.async ---- */
+
+/* Loop(axis, body, unroll, seed): the axis from 0 to its extent in steps of
+ * 1, the same loop shape as a StridedLoop. Its trip count is a constant, so
+ * the exit is marked uniform and the body may hold a barrier. */
 static int is_loop(is_wk_t *w, const kir_node_t *nd)
 {
     const kir_val_t *bd = kr_fld(nd, "body");

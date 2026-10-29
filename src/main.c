@@ -3,7 +3,7 @@
  * irptx [file]   KIR from the file, or from stdin when no argument
  * irptx --version
  * Exit 0 with the module on stdout, or 1 with one error line on stderr and
- * nothing on stdout (contracts/cli.md). */
+ * nothing on stdout. */
 
 #include <stdio.h>
 #include <string.h>

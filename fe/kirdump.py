@@ -1,7 +1,7 @@
 # kirdump.py -- fe_*: Graph.from_dict, buffers, meta.json, generic KIR writer (no decisions).
 #
-# The front end loads one kernel IR through Emmy's own classes and writes it as KIR text
-# (specs/001-kernel-ir-ptx-compiler/contracts/kir-text.md). It never folds, reorders, drops or
+# The front end loads one kernel IR through Emmy's own classes and writes it as KIR text.
+# It never folds, reorders, drops or
 # renames anything: the body is a generic dataclass walk, field by field, in declaration order.
 #
 # Refusals: every function raises FeError(code, what). compile.py catches it and calls

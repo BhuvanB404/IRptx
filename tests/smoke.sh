@@ -3,8 +3,8 @@
 #
 # For each kernel IR under $HK/problems, run `compile.py <ir>`:
 #   rc 0  stdout is one PTX module: version stamp comment first, then .version 8.0,
-#         .target sm_89, .address_size 64 (P1, P11), ASCII only (P4), one .entry named as
-#         the KIR says (P2), .param count = KIR arg count, all .u64 (P3), stderr empty,
+#         .target sm_89, .address_size 64, ASCII only, one .entry named as
+#         the KIR says, .param count = KIR arg count, all .u64, stderr empty,
 #         and ptxas accepts it for sm_89 and sm_120.
 #   rc 1  stdout empty and stderr exactly one line "error[E0NN]: irptx: ..." (a refusal,
 #         never a traceback). A reader code (E010-E015, E080-E082) is a failure: it means
@@ -52,22 +52,22 @@ check_ptx() {
     local ptx=$1 kir=$2 want got nargs nparam stamp
     [ -s "$ptx" ] || { echo "empty stdout on exit 0"; return 1; }
     if LC_ALL=C grep -q "[^[:print:]"$'\t'"]" "$ptx"; then
-        echo "P4 non-ASCII byte"; return 1
+        echo "non-ASCII byte"; return 1
     fi
     stamp=$(sed -n '1,3p' "$ptx" | grep -c '^// irptx [0-9]')
-    [ "$stamp" -ge 1 ] || { echo "P11 no version stamp in the first comment"; return 1; }
+    [ "$stamp" -ge 1 ] || { echo "no version stamp in the first comment"; return 1; }
     got=$(grep -v '^[[:space:]]*//' "$ptx" | grep -v '^[[:space:]]*$' | sed -n '1,3p' | tr '\n' '|')
     [ "$got" = ".version 8.0|.target sm_89|.address_size 64|" ] \
-        || { echo "P1 header is '$got'"; return 1; }
+        || { echo "header is '$got'"; return 1; }
     want=$(sed -n 's/^kernel //p' "$kir" | head -n 1)
     got=$(grep -c '^\(\.visible \)\{0,1\}\.entry ' "$ptx")
-    [ "$got" -eq 1 ] || { echo "P2 $got .entry lines"; return 1; }
-    grep -q "^\\(\\.visible \\)\\?\\.entry $want\\b" "$ptx" || { echo "P2 entry is not '$want'"; return 1; }
+    [ "$got" -eq 1 ] || { echo "$got .entry lines"; return 1; }
+    grep -q "^\\(\\.visible \\)\\?\\.entry $want\\b" "$ptx" || { echo "entry is not '$want'"; return 1; }
     nargs=$(grep -c '^arg ' "$kir")
     nparam=$(grep -c '^[[:space:]]*\.param ' "$ptx")
-    [ "$nparam" -eq "$nargs" ] || { echo "P3 $nparam params for $nargs args"; return 1; }
+    [ "$nparam" -eq "$nargs" ] || { echo "$nparam params for $nargs args"; return 1; }
     if grep '^[[:space:]]*\.param ' "$ptx" | grep -qv '\.u64'; then
-        echo "P3 a param is not .u64"; return 1
+        echo "a param is not .u64"; return 1
     fi
     return 0
 }

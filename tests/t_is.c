@@ -3,8 +3,7 @@
  * lowering first (is01..is25), then the reductions: accumulators and strided
  * loops (is26..), branches and shared memory (is29..), the warp shuffle
  * (is32..) and the shared tree (is34..), then Let bindings and the
- * multi-state combines (is36..). T064 continues the numbering with the
- * nested loop fixtures. */
+ * multi-state combines (is36..), then nested loops. */
 
 #include <stdint.h>
 #include <stdio.h>
@@ -263,7 +262,7 @@ static void is16(void)
 }
 TH_REG("is", 16, "an Assign result is bound so a later Assign reads it", is16)
 
-/* ---- Write (T030) ---- */
+/* ---- Write ---- */
 
 #define WR(out, idx, vals, extra) "(Write output=\"" out "\" index=[" idx "] values=[" vals "] value_dtype=dt:f32 " extra ")"
 #define WOK "atomic=false swizzle=\"NONE\""
@@ -341,7 +340,7 @@ static void is21(void)
 }
 TH_REG("is", 21, "an atomic or swizzled Write is refused E020", is21)
 
-/* ---- Vector accesses (T032; is08 now covers the scalar fallback) ---- */
+/* ---- Vector accesses (is08 covers the scalar fallback) ---- */
 
 #define XIN16 "arg 0 x0 in f32 1 64\narg 1 y out f32 1 64\n"
 #define A2 "(BinaryExpr op=\"*\" left=" A0 " right=" LIT(2) ")"
@@ -605,7 +604,7 @@ static void is35(void)
 }
 TH_REG("is", 35, "a tree with an inner state or a length of 3 is refused E020", is35)
 
-/* ---- Let bindings and multi-state combines (T057, T060) ---- */
+/* ---- Let bindings and multi-state combines ---- */
 
 #define LET(nm, val, dt) "(Let name=\"" nm "\" value=" val " dtype=" dt ")"
 #define LETF "(Literal value=0x1.0000000000000p+0f dtype=\"float\")"

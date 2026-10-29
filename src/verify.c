@@ -1,9 +1,9 @@
 /* verify.c -- vf_*: ASCII, labels, register bounds, barrier uniformity.
  *
  * Runs on the instruction records after isel and before anything is printed
- * (ASCII, and so P12: a dash is a non-ASCII byte), P5 (register bounds), P6
- * (labels) and the barrier rule P8 / ruling M7. P1-P3 and P11 are properties
- * of the text the emitter writes, not of the records. Sizes are not checked
+ * (ASCII, which also rules out typographic dashes), register bounds, labels
+ * and the barrier rule. The module directives, entry and parameters are
+ * properties of the text the emitter writes, not of the records. Sizes are not checked
  * here: is_new stops the record list at IR_MAX_INS (E083) and the emitter's
  * buffer refuses an oversized module (E084), so no estimate here could add
  * anything.
@@ -37,7 +37,7 @@
  * that ends the then body, which lies inside the first region, so it opens
  * the second). Backward branches never open one.
  *
- * bar.sync operands (M7): src[0] is the OP_IMM id, 0..15; the optional
+ * bar.sync operands: src[0] is the OP_IMM id, 0..15; the optional
  * src[1] is the OP_IMM thread count, a multiple of 32 in 32..1024. No
  * count means the whole block. bar.warp.sync is not checked here: its mask
  * comes from activemask and it is legal under divergence. */
@@ -123,7 +123,7 @@ static uint32_t vf_exit(const nv_ins_t *r, uint32_t n)
 
 /* ---- Checks ---- */
 
-/* P4, P12: every string the emitter prints is printable ASCII. */
+/* Every string the emitter prints is printable ASCII. */
 static int vf_ascii(void)
 {
     const kir_t *k = kr_get();
@@ -140,7 +140,7 @@ static int vf_ascii(void)
     return 0;
 }
 
-/* P6: each label defined once, each branch target defined. */
+/* Each label defined once, each branch target defined. */
 static int vf_lbl(void)
 {
     uint32_t n, i, at = 0;
@@ -157,7 +157,7 @@ static int vf_lbl(void)
     return 0;
 }
 
-/* P5: every register operand is numbered 1..rg_count of its file. */
+/* Every register operand is numbered 1..rg_count of its file. */
 static int vf_regs(void)
 {
     uint32_t n, i, j;
@@ -179,7 +179,7 @@ static int vf_regs(void)
     return 0;
 }
 
-/* M7: bar.sync id 0..15, count a multiple of 32 up to 1024. */
+/* bar.sync id 0..15, count a multiple of 32 up to 1024. */
 static int vf_barops(const nv_ins_t *q, uint32_t i)
 {
     if (q->src[0].kind != OP_IMM || q->src[0].v > VF_BARID)
@@ -243,7 +243,7 @@ static void vf_regions(const nv_ins_t *r, uint32_t n)
     }
 }
 
-/* P8, M7: no bar.sync or shfl in a divergent region, under its own guard
+/* No bar.sync or shfl in a divergent region, under its own guard
  * or in a loop whose trip count may differ, and bar.sync operands in range. */
 static int vf_bar(void)
 {

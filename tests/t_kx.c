@@ -736,7 +736,7 @@ static void kx20(void)
 }
 TH_REG("kx", 20, "decode is a bijection over range(N) for 60 random extent lists and launches", kx20)
 
-/* ---- Vector alignment (T032) ---- */
+/* ---- Vector alignment ---- */
 
 /* mm_vec on an index list text against extents dim[0..rank-1]; -1 on a load error. */
 static int kx_vec(uint32_t rank, const int32_t *dim, const char *idx, uint32_t w)

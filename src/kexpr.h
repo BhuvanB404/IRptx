@@ -27,7 +27,7 @@ int kx_eval(const kir_val_t *e, nv_opnd_t *out);
  * returned after printing. 0 otherwise. */
 int kx_fold(const kir_val_t *e, int32_t *val, int *isc);
 
-/* Affine form (research R6): sum(coef*var) + cst from Var, int Literal, Dim,
+/* Affine form: sum(coef*var) + cst from Var, int Literal, Dim,
  * + and - and * by a constant. Returns 1 and fills *out when affine, 0 when
  * not (a / or %, a comparison, a ternary, a float, more than IR_MAX_AFF
  * variables, or anything malformed). Not affine is not an error: nothing is

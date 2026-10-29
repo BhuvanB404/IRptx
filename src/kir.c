@@ -1,7 +1,6 @@
 /* kir.c -- kr_*: KIR text reader into fixed pools, explicit-stack parser.
  *
- * The text is a handful of header lines and one S-expression (contracts/
- * kir-text.md). The S-expression is read by one loop with an explicit stack
+ * The text is a handful of header lines and one S-expression. The S-expression is read by one loop with an explicit stack
  * of open `(` and `[` frames: no recursion, depth capped at IR_MAX_DEP.
  *
  * A node's fields (and a list's items) must end up contiguous in their pool,
@@ -183,8 +182,8 @@ static int kr_hexok(const char *s, size_t n)
 }
 
 /* Hex float token to f32 bits. The double is narrowed to float once and its
- * bit pattern is all that survives (research R18); one that overflows float
- * is refused rather than turned into an infinity. */
+ * bit pattern is all that survives, as the f32 kernel would see it. One
+ * that overflows float is refused rather than turned into an infinity. */
 static int kr_flt(const char *s, size_t n, uint32_t *bits)
 {
     char buf[IR_MAX_NAME + 1];

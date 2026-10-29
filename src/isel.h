@@ -27,7 +27,7 @@ void is_reset(void);
  * is left alone). E000 for a bad `rf`. */
 int rg_new(rf_t rf, nv_opnd_t *out);
 
-/* The single home register of `name` in file `rf` (ruling H2). The first call
+/* The single home register of `name` in file `rf`. The first call
  * allocates, later calls return the same register, whatever scope they are
  * in. A name asked for in two different files is E029: the IR used one name
  * for an integer loop variable and an f32 value. E081 when the home table
@@ -81,7 +81,7 @@ nv_opnd_t is_osym(uint32_t id);         /* shared array or parameter index */
 
 /* ---- Memory ---- */
 
-/* Parameter prologue (contracts/ptx-module.md): for each kernel parameter i,
+/* Parameter prologue: for each kernel parameter i,
  * in order, `ld.param.u64 %rdA, [param_i]` (OP_SYM i; the IR name rides in
  * the record's comment) then `cvta.to.global.u64 %rdB, %rdA`. %rdB is the
  * parameter's home register, kept for every later access. E024 for a
@@ -94,7 +94,7 @@ int mm_arg(uint32_t name, uint32_t *idx);
 /* Row-major flat element index of the index list `idx` (a KV_LIST) against
  * extents dim[0..rank-1]: sum(idx[k] * prod(dim[k+1..])). The list length
  * must equal `rank`, else E059; rank 0 with an empty list is the constant 0
- * (ruling C2). A constant index (kx_fold) is folded to an OP_IMM and emits
+ * (a scalar). A constant index (kx_fold) is folded to an OP_IMM and emits
  * nothing. Otherwise *out is an s32 register and the multiplies are
  * `mad.lo.s32`. Works for Smem extents too (pass the array's extents). */
 int mm_flat(const int32_t *dim, uint32_t rank, const kir_val_t *idx, nv_opnd_t *out);
@@ -103,7 +103,7 @@ int mm_flat(const int32_t *dim, uint32_t rank, const kir_val_t *idx, nv_opnd_t *
 int mm_gflat(uint32_t arg, const kir_val_t *idx, nv_opnd_t *out);
 
 /* 1 when a width-w (2 or 4) vector access at the flat index of `idx` is
- * provably aligned (ruling M6: all per-dimension affine coefficients and
+ * provably aligned (all per-dimension affine coefficients and
  * constants, times the strides, divisible by w; base 16-aligned), else 0
  * (not affine, misaligned, or w not 2 or 4). Silent. Call after mm_flat. */
 int mm_vec(const int32_t *dim, uint32_t rank, const kir_val_t *idx, uint32_t w);
@@ -130,7 +130,7 @@ int sm_add(uint32_t name, const int32_t *dim, uint32_t rank, uint32_t align, uin
 /* Slot of the shared array called `name`, or E022. */
 int sm_find(uint32_t name, uint32_t *id);
 
-/* The layout so far, for T040 to declare. */
+/* The layout so far, for the emitter to declare. */
 const is_smem_t *sm_get(void);
 
 /* Address of f32 element `flat` of shared array `id`, as s32 register *areg
@@ -143,7 +143,7 @@ int sm_addr(uint32_t id, nv_opnd_t flat, nv_opnd_t *areg, int32_t *boff);
 
 /* ---- Thread model ---- */
 
-/* The thread prologue of one Tile (research R4, R5; audit H4). Emits
+/* The thread prologue of one Tile. Emits
  *   mov.u32 tid, %tid.x ; [mov.u32 cta, %ctaid.x ; mad.lo.s32 gid, cta, block, tid]
  *   [setp.ge.s32 p, gid, N ; @p bra L_exit]
  * then decodes gid into the axes row-major (last fastest; shr/and for powers
@@ -171,15 +171,15 @@ int is_tend(void);
 
 /* ---- The walk ---- */
 
-/* The statement walk (contracts/lowering.md). One explicit stack of frames,
+/* The statement walk. One explicit stack of frames,
  * no recursion, at most IR_MAX_DEP deep (E082). A frame is a statement list
  * being visited: the list, the next item, and a "pending close" saying what
  * to do when the list is finished. is_run drives it; handlers only ask.
  *
  * Contract for a statement handler `int is_xxx(is_wk_t *w, const kir_node_t *nd)`
- * (T028-T072 fill the stubs in isel.c, one per kind):
+ * (one per statement kind, in isel.c):
  *   (a) it does its work on entry: emits records, binds names, pre-scans the
- *       immediate body (H1 seeding), allocates labels;
+ *       immediate body to seed its accumulators, allocates labels;
  *   (b) to have a child list visited it calls is_wvisit once and returns 0.
  *       The walk visits that list after the handler returns, so the child
  *       statements come after every record the handler emitted. With

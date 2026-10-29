@@ -13,7 +13,7 @@
 #include <stddef.h>
 
 /* The one place the version lives. Printed by --version and stamped into the
- * first comment line of every PTX file (contracts/ptx-module.md, P11). */
+ * first comment line of every PTX file. */
 #define IRPTX_VER "0.1.0"
 
 /* ---- Limits ---- */
@@ -35,7 +35,7 @@
 #define IR_MAX_SMEM  16u            /* shared arrays */
 #define IR_MAX_OUT   2000000u       /* output characters, the runner's PTX limit */
 
-#define IR_MAX_NAME  63u            /* longest KIR string (contracts/kir-text.md) */
+#define IR_MAX_NAME  63u            /* longest KIR string */
 #define IR_MAX_AFF   4u             /* variables in an affine index (kx_aff_t) */
 
 /* ---- Guards ---- */
@@ -90,7 +90,7 @@ typedef enum {
     KR_NKIND                        /* count, keep last */
 } kr_kind_t;
 
-/* Value tags of a KIR field (contracts/kir-text.md, "S-expression values"). */
+/* Value tags of a KIR field. */
 typedef enum {
     KV_NONE = 0,                    /* `none` */
     KV_BOOL, KV_INT, KV_FLT, KV_STR, KV_LIST, KV_NODE,
@@ -103,7 +103,7 @@ typedef enum { KA_IN = 0, KA_CONST, KA_OUT } ka_kind_t;
 
 /* Register files. Four, as in the PTX module header: %r s32, %rd u64,
  * %f f32, %p pred. Every Accum, Init and loop variable has one home register
- * in one of these and rebinds are `mov` into it (ruling H2). */
+ * in one of these and rebinds are `mov` into it. */
 typedef enum { RF_R = 0, RF_RD, RF_F, RF_P, RF_N } rf_t;
 
 /* Operand kinds. */
@@ -183,7 +183,7 @@ typedef struct {
 
 /* One kernel parameter. The parameter index is the position of its `arg`
  * line. Rank 0 is legal: a scalar output is one element, empty index is
- * offset 0 (ruling C2). */
+ * offset 0. */
 typedef struct {
     uint32_t name;                  /* IR buffer name; never a PTX identifier */
     uint8_t  kind;                  /* ka_kind_t */
@@ -250,7 +250,7 @@ typedef struct {
     uint8_t   op;                   /* reducing op, from the ops.c enum */
     uint32_t  ident;                /* f32 bits of the identity (max is -1e30, never inf) */
     uint8_t   has_init;             /* declared by Init: seeded once, never re-seeded */
-    uint8_t   seeded;               /* 1 once an identity mov has been emitted for it (H1) */
+    uint8_t   seeded;               /* 1 once an identity mov has been emitted for it */
 } is_acc_t;
 
 /* One shared array. Offsets are rounded up to the alignment. */
@@ -273,7 +273,7 @@ typedef struct {
 
 /* An affine index: sum(coef[i] * var[i]) + cst, at most IR_MAX_AFF variables.
  * Built only from +, * by literals, Var and Literal. Used to prove vector
- * alignment (M6) and to fold constants. Not affine means no vector access. */
+ * alignment and to fold constants. Not affine means no vector access. */
 typedef struct {
     uint32_t var[IR_MAX_AFF];       /* string offsets */
     int64_t  coef[IR_MAX_AFF];

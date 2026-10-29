@@ -4,7 +4,7 @@
 # Runs `submit.py <problem> --compiler compile.py` once per problem directory,
 # sequentially (the runner is shared, parallel launches only earn "busy"),
 # reads the verdict out of submit.py's printed text, and writes
-# results/sweep.json (contracts/sweep-results.md). --compare is Gate G3:
+# results/sweep.json. With --compare it is a regression gate:
 # exit 1 when anything that passed before no longer does.
 import argparse
 import datetime
@@ -134,7 +134,7 @@ def sw_regr(old, new):
 
 
 def sw_base(path):
-    """Load the --compare baseline; (doc, None) or (None, why). A vacuous G3 pass is worse than none."""
+    """Load the --compare baseline; (doc, None) or (None, why). A vacuous comparison is worse than none."""
     try:
         doc = json.loads(Path(path).read_text())
     except (OSError, ValueError) as e:

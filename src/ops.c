@@ -126,7 +126,7 @@ int op_emit(opn_t op, nv_opnd_t dst, nv_opnd_t a, nv_opnd_t b)
 
     switch (op) {
     /* The .rn forms keep ptxas from fusing a mul and an add into an fma, which
-     * would round once where Emmy's f32 reference rounds twice (R7). */
+     * would round once where Emmy's f32 reference rounds twice. */
     case OPN_ADD:         /* dst = a + b */
         return is_ins(NV_ADD_RN_F32, dst, a, b, none);
     case OPN_SUBTRACT:    /* dst = a - b */

@@ -293,7 +293,7 @@ static void em_ins(const nv_ins_t *r)
 
 /* ---- Module ---- */
 
-/* Version stamp (P11) and the three directives (P1). */
+/* Version stamp comment and the three module directives. */
 static void em_head(const kir_t *k)
 {
     em_apnd("//\n// irptx " IRPTX_VER " ");

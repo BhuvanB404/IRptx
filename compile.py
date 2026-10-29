@@ -4,7 +4,6 @@
 #        python compile.py --kir <kernel.ir.json>           (print the KIR text, no core)
 #        python compile.py --version
 # This file only plumbs: it makes no lowering decision (all of that is in src/*.c).
-# Contract: specs/001-kernel-ir-ptx-compiler/contracts/cli.md, research R19.
 #
 # Finding the core, in order (cp_core):
 #   1. bin/irptx, if it is a file we may execute and the OS agrees to run it.
@@ -31,7 +30,7 @@ for _d in (str(ROOT / "fe"), str(ROOT)):
         sys.path.insert(0, _d)
 import kirdump as fe  # noqa: E402
 
-CORE_TIMEOUT = 20      # seconds, fixed by contracts/cli.md
+CORE_TIMEOUT = 20      # seconds for one core run
 BUILD_TIMEOUT = 120    # seconds for the one-time cc build
 
 
