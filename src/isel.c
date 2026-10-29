@@ -494,7 +494,7 @@ int sm_add(uint32_t name, const int32_t *dim, uint32_t rank, uint32_t align, uin
 
     if (m->narr >= IR_MAX_SMEM) return er_fail(E081, "more shared arrays than the table holds");
     if (!dim || rank == 0 || rank > IR_MAX_DIM) return er_fail(E059, "a shared array with no extents");
-    /* checked at every multiply: four extents of 65536 make 2^64, which
+    /* checked at every multiply: four extents of 2^16 make 2^64, which
      * wraps a uint64 to 0 and would pass any check made after the loop */
     for (i = 0; i < rank; i++) {
         if (dim[i] < 1) return er_fail(E059, "a shared array with an extent below 1");
