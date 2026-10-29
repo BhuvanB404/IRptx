@@ -40,6 +40,14 @@ What was missing was two rules the spec had already written down.
   two-state tree's four shared loads, four stores and two broadcasts
   (Bhuvan B, 2026-10-26)
 
+### Build
+
+- `bin/irptx` rebuilt. The committed binary dated from the attention and
+  matmul commit and missed every lowering fix after it, the full-mask warp
+  shuffle among them, so what `compile.py` ran was not what `src/` says.
+  All fifteen open problems PASS on the runner with the new one
+  (Bhuvan B, 2026-10-29)
+
 ## irptx 0.1.0
 
 Ten of the fifteen open problems now pass on the runner: every pointwise kernel,
